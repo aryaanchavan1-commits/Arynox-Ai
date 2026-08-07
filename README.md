@@ -19,6 +19,9 @@ A production-ready, trilingual AI assistant web app — built by **Arynox Tech**
 - **🤖 Auto model routing** — quota-aware chain: Cerebras `gpt-oss-120b` → `zai-glm-4.7` → Groq `llama-3.3-70b-versatile` → `llama-3.1-8b-instant` → OpenCode free models (`laguna-s-2.1-free`, `nemotron-3-ultra-free`, `longcat-2.0-free`). Vision & STT use Groq qwen / whisper.
 - **⏰ 24/7 keep-alive** — GitHub Actions pings the backend every 10 minutes (`keepalive.yml`) so Render free never sleeps; the app also self-pings while open.
 - **🌗 Day/night themes** — auto-switches at 06:00 / 18:00, or manual light/dark; fully responsive mobile layout (bottom nav rail), installable as a PWA (manifest).
+- **🔐 Accounts** — sign in / sign up with email + password or Google (Supabase Auth). Per-user workspaces: every user's files are isolated server-side; guests share a private temp workspace.
+- **🏨 Concierge mode** — business owners (hotels, resorts, restaurants) fill a small profile in the Automate tab and the AI becomes their guest assistant: Marathi/Hindi/English replies, booking request forms (`bookings.xlsx`), invoices, budgets and PDF itineraries.
+- **💬 WhatsApp bot** — webhook endpoint (`/api/whatsapp`) that answers in the user's language; enable by setting the three WhatsApp env vars below.
 
 ## Getting started
 
@@ -38,6 +41,9 @@ All keys are stored in Vercel / Render env config (and `.env` locally — never 
 | `CEREBRAS_API_KEY` | Primary chat model (`gpt-oss-120b`, best Hindi; no vision) |
 | `EXA_API_KEY` | Web search + page fetch tool |
 | `OPENCODE_API_KEY` | Free-model fallback tier via `https://opencode.ai/zen/v1` |
+| `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SECRET_KEY` | Auth (email/password + Google OAuth); secret key server-side only |
+| `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Same values, client bundle |
+| `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_ID` / `WHATSAPP_VERIFY_TOKEN` | WhatsApp Business Cloud API bot (set these to turn the bot on) |
 
 ## Architecture
 
@@ -46,8 +52,8 @@ All keys are stored in Vercel / Render env config (and `.env` locally — never 
 - **Providers**: `lib/providers.js` (chain + quota detection), `lib/groq.js` (vision/STT/memory), `lib/opencode.js`-style fallbacks inside the chain.
 - **Sandbox**: `lib/runner.js` — Node `vm` with 8 s timeout, custom console capture, async IIFE; Python via real interpreter (`python3 -c`, 8 s timeout, 60 KB output cap).
 - **Intent routing**: `lib/intent.js` — regex classifier decides image / office / code / research / chat before the agent runs.
-- **Storage**: browser `localStorage` (memory, history, project, theme, credentials). Nothing personal is uploaded.
-- **Security**: no secrets in client bundle; credentials sent only to the user's own browser-stored config on automation calls; outbound calls server-side only.
+- **Storage**: browser `localStorage` (memory, history, project, theme, credentials) + Supabase Auth (user identity). Per-user workspaces are server-side in-memory maps keyed by user id; guests share `__guest__`.
+- **Security**: no secrets in client bundle; credentials sent only to the user's own browser-stored config on automation calls; outbound calls server-side only. JWT is verified against Supabase on every `/api/chat`, `/api/workspace` and `/api/upload-project` request; invalid/absent tokens fall back to the guest workspace.
 - **Keep-alive**: `.github/workflows/keepalive.yml` pings `/api/ping` on Render + Vercel every 10 minutes.
 
 ## Deployment
@@ -56,7 +62,9 @@ All keys are stored in Vercel / Render env config (and `.env` locally — never 
 
 ```bash
 vercel --prod   # or connect the GitHub repo
-# set env: GROQ_API_KEY, EXA_API_KEY, CEREBRAS_API_KEY, OPENCODE_API_KEY
+# set env: GROQ_API_KEY, EXA_API_KEY, CEREBRAS_API_KEY, OPENCODE_API_KEY,
+# SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY,
+# NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 # plus API_ORIGIN=https://arynox-ai.onrender.com (proxies every /api/* call to Render)
 ```
 
@@ -66,5 +74,6 @@ vercel --prod   # or connect the GitHub repo
 # New Web Service → connect the Arynox-Ai repo
 # Build: npm install && npm run build
 # Start: npm start
-# Set the same 4 env vars (API_ORIGIN must stay UNSET here)
+# Set the same 4+6 env vars (API_ORIGIN must stay UNSET here).
+# For the WhatsApp bot, add WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, WHATSAPP_VERIFY_TOKEN on both hosts.
 ```

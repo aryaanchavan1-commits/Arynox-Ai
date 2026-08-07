@@ -1,5 +1,6 @@
 import { groqChat, extractMemory, lastUserLang } from "@/lib/groq";
 import { runAgent } from "@/lib/agent";
+import { ownerFromRequest } from "@/lib/supabase";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -10,6 +11,7 @@ export async function POST(req) {
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const memory = Array.isArray(body.memory) ? body.memory : [];
     const image = typeof body.image === "string" ? body.image : null;
+    const business = body.business && typeof body.business === "object" ? body.business : null;
 
     const last = messages[messages.length - 1];
     const userText =
@@ -17,6 +19,9 @@ export async function POST(req) {
     if (!userText.trim()) return Response.json({ error: "empty" }, { status: 400 });
 
     const lang = lastUserLang(messages);
+    const owner = await ownerFromRequest(req);
+
+    const agentParams = { messages, memory, creds: body.creds || {}, owner, business };
 
     if (image) {
       const vis = await groqChat({ messages, image, memory });
@@ -31,7 +36,7 @@ export async function POST(req) {
           ...messages,
           { role: "user", content: `[The user attached the image shown above. Vision analysis of it (treat as ground truth): "${String(vis.reply).slice(0, 3000)}"]` },
         ];
-        const result = await runAgent({ messages: augmented, memory, creds: body.creds || {} });
+        const result = await runAgent({ ...agentParams, messages: augmented });
         if (result.reply && !result.error) {
           const newFacts = await extractMemory(userText, result.reply);
           return Response.json({
@@ -51,7 +56,7 @@ export async function POST(req) {
       return Response.json({ reply: vis.reply, lang, memory: newFacts, model: vis.usedModel, provider: "groq" });
     }
 
-    const result = await runAgent({ messages, memory, creds: body.creds || {} });
+    const result = await runAgent(agentParams);
     if (result.error && !result.reply) {
       return Response.json({ error: result.error }, { status: 500 });
     }

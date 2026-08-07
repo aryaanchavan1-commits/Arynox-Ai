@@ -7,8 +7,9 @@ import { python } from "@codemirror/lang-python";
 import { oneDark } from "@codemirror/theme-one-dark";
 import JSZip from "jszip";
 import { classify } from "@/lib/intent";
+import { sb } from "@/lib/supabase-client";
 
-const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds" };
+const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business" };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
@@ -76,6 +77,15 @@ export default function Home() {
   const [newFact, setNewFact] = useState("");
   const [theme, setTheme] = useState(() => load(KEY.theme, "auto"));
   const [creds, setCreds] = useState(() => load(KEY.creds, { githubToken: "", gmailUser: "", gmailPass: "", mcpUrl: "", mcpToken: "", mcpServers: [] }));
+  const [user, setUser] = useState(() => load(KEY.session, null));
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authTab, setAuthTab] = useState("in");
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPass, setAuthPass] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [business, setBusiness] = useState(() => load(KEY.business, null));
   const [mcpInfo, setMcpInfo] = useState([]);
   const [mcpBusy, setMcpBusy] = useState(false);
   const [autoLog, setAutoLog] = useState([]);
@@ -131,6 +141,77 @@ export default function Home() {
   }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
   useEffect(() => () => { stopCamera(); }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const { data } = await sb.auth.getSession();
+        if (!mounted) return;
+        if (data?.session?.access_token) {
+          const u = { id: data.session.user.id, email: data.session.user.email || "", name: data.session.user.user_metadata?.full_name || data.session.user.email?.split("@")[0] || "User", token: data.session.access_token };
+          setUser(u);
+          save(KEY.session, u);
+        }
+      } catch {}
+    })();
+    const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") { setUser(null); save(KEY.session, null); }
+    });
+    return () => { mounted = false; sub?.subscription?.unsubscribe(); };
+  }, []);
+
+  const authHeaders = () => (user?.token ? { Authorization: `Bearer ${user.token}` } : {});
+
+  const doAuth = async () => {
+    const email = authEmail.trim().toLowerCase();
+    const pass = authPass;
+    if (!email || pass.length < 6) { setAuthError("Enter a valid email and a password with at least 6 characters."); return; }
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      if (authTab === "in") {
+        const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+        if (error) throw error;
+        if (data?.user && data.session) {
+          const u = { id: data.user.id, email: data.user.email || email, name: data.user.user_metadata?.full_name || email.split("@")[0], token: data.session.access_token };
+          setUser(u);
+          save(KEY.session, u);
+          setAuthOpen(false);
+          setStatus(`welcome, ${u.name}`);
+        }
+      } else {
+        const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { full_name: authName.trim() || email.split("@")[0] } } });
+        if (error) throw error;
+        if (data?.session?.access_token) {
+          const u = { id: data.user.id, email: data.user.email || email, name: data.user.user_metadata?.full_name || email.split("@")[0], token: data.session.access_token };
+          setUser(u);
+          save(KEY.session, u);
+          setAuthOpen(false);
+          setStatus(`welcome, ${u.name}`);
+        } else {
+          setAuthError("Account created! Check your email to confirm, then sign in.");
+          setAuthTab("in");
+        }
+      }
+    } catch (err) {
+      setAuthError(err?.message || "Authentication failed. Try again.");
+    } finally { setAuthBusy(false); }
+  };
+
+  const googleSignIn = () => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: origin } }).catch((err) => setAuthError(err?.message || "Google sign-in failed"));
+  };
+
+  const signOut = async () => {
+    try { await sb.auth.signOut(); } catch {}
+    setUser(null);
+    save(KEY.session, null);
+    setStatus("signed out - you can keep using it as a guest");
+  };
+
+  const setBusinessProfile = (patch) => setBusiness((prev) => { const next = { ...(prev || {}), ...patch }; save(KEY.business, next); return next; });
 
   const persist = (msgs) => {
     setMessages(msgs);
@@ -248,7 +329,7 @@ export default function Home() {
       if (!items.length) throw new Error("No readable files (each file must be under 500 KB)");
       const res = await fetch("/api/upload-project", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ files: items }),
         signal: AbortSignal.timeout(90000),
       });
@@ -303,12 +384,13 @@ export default function Home() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           messages: history.slice(-16).map((m) => (m.role === "user" && m.image ? { ...m, image: null } : m)),
           memory,
           image: image || null,
           creds,
+          business,
         }),
         signal: AbortSignal.timeout(180000),
       });
@@ -503,7 +585,7 @@ export default function Home() {
 
   const downloadWorkspace = async () => {
     try {
-      const res = await fetch("/api/workspace", { signal: AbortSignal.timeout(60000) });
+      const res = await fetch("/api/workspace", { headers: { ...authHeaders() }, signal: AbortSignal.timeout(60000) });
       if (!res.ok) return;
       const blob = await res.blob();
       download("arynox-workspace.zip", blob, "application/zip");
@@ -554,6 +636,14 @@ export default function Home() {
           <button onClick={() => { const next = theme === "light" ? "dark" : theme === "dark" ? "auto" : "light"; setTheme(next); save(KEY.theme, next); }} title="Theme (auto = day/night)">
             {effectiveTheme === "dark" ? "🌙" : "☀️"}<span>{theme === "auto" ? "Auto (day/night)" : effectiveTheme === "dark" ? "Dark" : "Light"}</span>
           </button>
+          {user ? (
+            <button className="user-chip" onClick={signOut} title="Signed in - click to sign out">
+              <span className="user-avatar">{(user.name || "U")[0].toUpperCase()}</span>
+              <span className="user-email">{user.email || user.name}</span>
+            </button>
+          ) : (
+            <button className="signin-btn" onClick={() => { setAuthOpen(true); setAuthError(""); }}>👤<span>Sign in</span></button>
+          )}
           {modelBadge && <div className="model-badge">{modelBadge}</div>}
         </div>
       </nav>
@@ -601,6 +691,13 @@ export default function Home() {
                     <button className="sugg-card" onClick={() => send("Draw a futuristic city at night")}><span>🖼️</span><div><b>Generate an image</b><em>Create art on demand</em></div></button>
                     <button className="sugg-card" onClick={() => send("Build a to-do app with HTML, CSS and JS")}><span>💻</span><div><b>Web app project</b><em>Multi-file app in your IDE</em></div></button>
                     <button className="sugg-card" onClick={() => { pendingPromptRef.current = "Summarize this file"; officeRef.current?.click(); }}><span>📎</span><div><b>Work with files</b><em>Excel, CSV, Word, images</em></div></button>
+                  </div>
+                  <div className="welcome-sub">For business owners — hotels, resorts, restaurants in Konkan & beyond</div>
+                  <div className="sugg-grid">
+                    <button className="sugg-card" onClick={() => { setTab("auto"); }}>🏨<div><b>Set up my business</b><em>Turn the AI into your concierge</em></div></button>
+                    <button className="sugg-card" onClick={() => send("Create a booking request form in Excel for my hotel")}><b>📋</b><div><b>Booking form (Excel)</b><em>Guests fill it, you get orders</em></div></button>
+                    <button className="sugg-card" onClick={() => send("Make a 2-day Ratnagiri itinerary as a PDF for my guests")}>🗺️<div><b>Itinerary (PDF)</b><em>Ready for your guests</em></div></button>
+                    <button className="sugg-card" onClick={() => send("Create a monthly expense sheet for my business")}>💰<div><b>Budget sheet (Excel)</b><em>Track income & expenses</em></div></button>
                   </div>
                   <div className="welcome-hints"><span>🎤 Talk</span><span>📷 Photo</span><span>✨ Image mode</span><span>💻 Code</span><span>⚡ Automate</span></div>
                 </div>
@@ -810,6 +907,24 @@ export default function Home() {
                     )}
                   </div>
                   <div className="auto-card">
+                    <div className="auto-card-title">🏨 Business assistant — concierge mode</div>
+                    <p className="auto-note">Set up your hotel, resort or restaurant and the AI becomes its guest-facing assistant: bookings, itineraries, invoices and budgets — in English, Hindi or Marathi.</p>
+                    <input className="auto-input" placeholder="Business name (e.g. Hotel Konkan Darshan)" value={business?.name || ""} onChange={(e) => setBusinessProfile({ name: e.target.value })} />
+                    <select className="auto-input" value={business?.type || "Hotel"} onChange={(e) => setBusinessProfile({ type: e.target.value })}>
+                      {["Hotel", "Resort", "Homestay", "Restaurant", "Travel & Tours", "Diving & Watersports", "Other"].map((t) => <option key={t}>{t}</option>)}
+                    </select>
+                    <input className="auto-input" placeholder="Location (e.g. Ratnagiri, Maharashtra)" value={business?.location || ""} onChange={(e) => setBusinessProfile({ location: e.target.value })} />
+                    <input className="auto-input" placeholder="Phone / WhatsApp number" value={business?.phone || ""} onChange={(e) => setBusinessProfile({ phone: e.target.value })} />
+                    <input className="auto-input" placeholder="Email" value={business?.email || ""} onChange={(e) => setBusinessProfile({ email: e.target.value })} />
+                    <textarea className="auto-input" rows={2} placeholder="Rooms, prices, food, activities... (what guests should know)" value={business?.services || ""} onChange={(e) => setBusinessProfile({ services: e.target.value })} />
+                    <div className="auto-actions">
+                      <button className="chip" disabled={!business?.name?.trim()} onClick={() => { setTab("chat"); send(`I have set up my business: ${JSON.stringify(business).slice(0, 300)}. Confirm you know my business now.`); }}>💬 Activate in chat</button>
+                    </div>
+                    {!user && (
+                      <p className="auto-note">🔒 Save this to your account so it follows you: <button className="chip" onClick={() => setAuthOpen(true)}>Sign in</button></p>
+                    )}
+                  </div>
+                  <div className="auto-card">
                     <div className="auto-card-title">💬 Just ask in chat</div>
                     <p className="auto-note">Once connected, you can just say things like:<br />• "Make a budget Excel file"<br />• "Search GitHub for a React calendar library"<br />• "Email this report to me"<br />• "Create an issue on my repo"<br />• "Call the MCP tool get_stock_price for Tesla"</p>
                   </div>
@@ -824,6 +939,41 @@ export default function Home() {
           </div>
         )}
       </main>
+
+      {authOpen && (
+        <div className="modal" onClick={() => setAuthOpen(false)}>
+          <div className="auth-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="auth-head">
+              <span>{user ? "Signed in" : authTab === "in" ? "Welcome back" : "Create your account"}</span>
+              <button className="icon-btn" onClick={() => setAuthOpen(false)}>✕</button>
+            </div>
+            {user ? (
+              <div className="auth-body">
+                <div className="auth-avatar">{(user.name || "U")[0].toUpperCase()}</div>
+                <b>{user.name}</b>
+                <span className="auth-email">{user.email}</span>
+                <p className="auto-note">✓ Signed in — your workspace and files are saved to your account.</p>
+                <button className="send-btn" style={{ width: "100%" }} onClick={() => { setAuthOpen(false); signOut(); }}>Sign out</button>
+              </div>
+            ) : (
+              <div className="auth-body">
+                <div className="auth-tabs">
+                  <button className={authTab === "in" ? "active" : ""} onClick={() => { setAuthTab("in"); setAuthError(""); }}>Sign in</button>
+                  <button className={authTab === "up" ? "active" : ""} onClick={() => { setAuthTab("up"); setAuthError(""); }}>Create account</button>
+                </div>
+                {authTab === "up" && <input className="auto-input" placeholder="Your name" value={authName} onChange={(e) => setAuthName(e.target.value)} />}
+                <input className="auto-input" type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} />
+                <input className="auto-input" type="password" placeholder="Password (min 6 characters)" value={authPass} onChange={(e) => setAuthPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doAuth(); }} />
+                {authError && <div className="auth-error">{authError}</div>}
+                <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={doAuth}>{authBusy ? "Working..." : authTab === "in" ? "Sign in" : "Create account"}</button>
+                <div className="auth-or">or</div>
+                <button className="chip" style={{ width: "100%" }} disabled={authBusy} onClick={googleSignIn}>🔵 Continue with Google</button>
+                <p className="auto-note">Your workspace, files and business profile are saved to your account — sign in on any device to continue.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
