@@ -28,6 +28,7 @@ function md(s) {
     .replace(/^# (.+)$/gm, "<h2>$1</h2>")
     .replace(/^[-•] (.+)$/gm, "<li>$1</li>")
     .replace(/(?:<li>.*?<\/li>(?:\n)?)+/g, (m) => "<ul class=\"md-list\">" + m.replace(/\n/g, "") + "</ul>")
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer"><img class="generated md-img" src="$2" alt="$1" loading="lazy"/></a>')
     .replace(/\n\n/g, "<br/>");
 }
 function parseBlocks(content) {
@@ -42,7 +43,7 @@ function parseBlocks(content) {
   if (last < content.length) parts.push({ type: "text", html: md(content.slice(last)) });
   return parts.length ? parts : [{ type: "text", html: md(content) }];
 }
-const TOOL_ICONS = { web_search: "🔎", get_url: "📄", run_code: "⚙", write_file: "📝", read_file: "📖", edit_file: "✏️", list_files: "🗂", delete_file: "🗑", create_excel: "📊", create_csv: "📄", create_docx: "📝", gmail_send: "✉️", github_search: "🐙", github_issues: "🐙", github_create_issue: "🐙", http_call: "🌐", mcp_call: "🔌", mcp_list_tools: "🔌" };
+const TOOL_ICONS = { web_search: "🔎", get_url: "📄", run_code: "⚙", write_file: "📝", read_file: "📖", edit_file: "✏️", list_files: "🗂", delete_file: "🗑", create_excel: "📊", create_csv: "📄", create_docx: "📝", create_pdf: "📕", deep_research: "🔬", create_image: "🖼️", gmail_send: "✉️", github_search: "🐙", github_issues: "🐙", github_create_issue: "🐙", http_call: "🌐", mcp_call: "🔌", mcp_list_tools: "🔌" };
 const OBJECT_ICONS = {
   person: "🧍", human: "🧍", man: "🧍", woman: "🧍", people: "🧍",
   laptop: "💻", computer: "💻", phone: "📱", smartphone: "📱",
@@ -105,6 +106,7 @@ export default function Home() {
   const chunksRef = useRef([]);
   const fileRef = useRef(null);
   const officeRef = useRef(null);
+  const projectRef = useRef(null);
   const pendingPromptRef = useRef("");
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -228,6 +230,39 @@ export default function Home() {
     setActiveFile((a) => Math.min(a, project.length - 2));
   };
   const renameFile = (i, name) => setProject((prev) => { const next = prev.map((f, j) => (j === i ? { ...f, name } : f)); save(KEY.project, next); return next; });
+
+  const uploadProject = async (e) => {
+    const files = e.target.files;
+    e.target.value = "";
+    if (!files?.length) return;
+    if (busy) { setStatus("wait - the agent is working"); return; }
+    setBusy(true);
+    setStatus("uploading project...");
+    try {
+      const items = [];
+      for (const f of files) {
+        if (f.size > 512 * 1024) continue;
+        const rel = f.webkitRelativePath ? f.webkitRelativePath.split("/").slice(1).join("/") : f.name;
+        items.push({ name: rel || f.name, code: await f.text() });
+      }
+      if (!items.length) throw new Error("No readable files (each file must be under 500 KB)");
+      const res = await fetch("/api/upload-project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: items }),
+        signal: AbortSignal.timeout(90000),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "upload failed");
+      const proj = d.files.map((f) => ({ name: f.name, code: f.code }));
+      setProject(proj);
+      save(KEY.project, proj);
+      setActiveFile(0);
+      setTab("ide");
+      setStatus(`uploaded ${d.files.length} files - tell me what to do with them`);
+    } catch (err) { setStatus("upload failed: " + err.message); }
+    finally { setBusy(false); }
+  };
 
   const runAutomation = async (action, params) => {
     setAutoRunning(action);
@@ -420,7 +455,7 @@ export default function Home() {
 
   const ToolChips = ({ tools }) => {
     if (!tools?.length) return null;
-    const names = { web_search: "searched the web", get_url: "read a page", run_code: "ran code", write_file: "wrote a file", read_file: "read a file", edit_file: "edited a file", list_files: "listed files", delete_file: "deleted a file", create_excel: "made an Excel file", create_csv: "made a CSV", create_docx: "made a Word doc", gmail_send: "sent email", github_search: "GitHub", github_issues: "GitHub", github_create_issue: "GitHub", http_call: "HTTP call", mcp_call: "MCP", mcp_list_tools: "MCP tools" };
+    const names = { web_search: "searched the web", get_url: "read a page", run_code: "ran code", write_file: "wrote a file", read_file: "read a file", edit_file: "edited a file", list_files: "listed files", delete_file: "deleted a file", create_excel: "made an Excel file", create_csv: "made a CSV", create_docx: "made a Word doc", create_pdf: "made a PDF", deep_research: "did deep research", create_image: "generated an image", gmail_send: "sent email", github_search: "GitHub", github_issues: "GitHub", github_create_issue: "GitHub", http_call: "HTTP call", mcp_call: "MCP", mcp_list_tools: "MCP tools" };
     return <div className="tool-chips">{tools.map((t, i) => <span className="tool-chip" key={i}>{TOOL_ICONS[t.name] || "🔧"} {names[t.name] || t.name}</span>)}</div>;
   };
 
@@ -441,11 +476,12 @@ export default function Home() {
 
   const FileChips = ({ files }) => {
     if (!files?.length) return null;
-    const icons = { xlsx: "📊", csv: "📄", docx: "📝" };
+    const icons = { xlsx: "📊", csv: "📄", docx: "📝", pdf: "📕" };
+    const mimes = { xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", pdf: "application/pdf", csv: "text/csv" };
     return (
       <div className="file-chips">
         {files.map((f, i) => (
-          <button key={i} className="file-chip" onClick={() => downloadBase64(f.name, f.type === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : f.type === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "text/csv", f.dataBase64)}>
+          <button key={i} className="file-chip" onClick={() => downloadBase64(f.name, mimes[f.type] || "application/octet-stream", f.dataBase64)}>
             {icons[f.type] || "📎"} {f.name} ⬇
           </button>
         ))}
@@ -609,9 +645,9 @@ export default function Home() {
               )}
               <div className="input-row">
                 <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPickImage} />
-                <input ref={officeRef} type="file" accept=".xlsx,.csv,.txt,.docx" hidden onChange={onPickOfficeFile} />
+                <input ref={officeRef} type="file" accept=".xlsx,.csv,.txt,.docx,.pdf" hidden onChange={onPickOfficeFile} />
                 <button className="tool-btn" title="Attach a photo" onClick={() => fileRef.current?.click()}>📷</button>
-                <button className="tool-btn" title="Attach Excel/CSV/Word file" onClick={() => officeRef.current?.click()}>📎</button>
+                <button className="tool-btn" title="Attach Excel/CSV/Word/PDF file" onClick={() => officeRef.current?.click()}>📎</button>
                 <textarea rows={1} placeholder={genMode ? "Describe the image you want..." : "Message Arynox AI..."}
                   value={input} onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} />
@@ -627,6 +663,8 @@ export default function Home() {
             <header className="topbar">
               <div className="brand"><span className="dot busy" /><span className="status">IDE — build & run entire projects</span></div>
               <div className="ide-bar">
+                <input ref={projectRef} type="file" webkitdirectory="" multiple hidden onChange={uploadProject} />
+                <button className="chip" title="Upload an entire project folder - the AI works on it" onClick={() => projectRef.current?.click()}>📁 Upload project</button>
                 <input className="file-name" placeholder="new-file.js" value={newFileName} onChange={(e) => setNewFileName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addFile(); }} />
                 <button className="chip" onClick={addFile}>＋ File</button>
                 <button className="chip" onClick={() => { setRunOut(""); }}>⌫ Clear</button>

@@ -6,13 +6,15 @@ A production-ready, trilingual AI assistant web app — built by **Arynox Tech**
 
 - **💬 Trilingual chat** — English, Hindi, Marathi. Automatic language detection; replies come back in your language.
 - **🧠 Intent detection** — the AI figures out what you want automatically: code projects, image generation, office files, live web research or plain chat — no mode switching needed.
+- **🔬 Deep research** — a `deep_research` agent tool expands your question into multiple searches, reads full pages via the **Exa API** and returns a cited dossier with numbered sources.
 - **🎤 Voice** — speech-to-text (whisper) and text-to-speech (Google TTS, per-language).
-- **📷 Vision** — attach a photo, the AI describes/analyzes it (qwen vision via Groq).
-- **✨ Image generation** — Pollinations (flux / turbo / flux-anime fallback chain) with double-verified URLs.
+- **📷 Vision + autonomous work** — attach a photo and the AI first *sees* it (Groq qwen vision), then the agent can analyze it, extract data into Excel/CSV/PDF, or write code about it.
+- **✨ Image generation** — Pollinations flux (enhanced, stable seeded) with a turbo / flux-anime fallback chain; the chat agent can also generate images (`create_image`) and shows them inline.
 - **💻 Built-in IDE** — multi-file projects (JS + Python), run in a sandbox (Node `vm` + real Python 3), live console output, syntax highlighting, download as ZIP.
+- **📁 Project upload** — upload an entire project folder from the IDE tab; the agent explores it (list/read), fixes, extends and verifies it autonomously.
 - **👁 See tab** — live camera object detection every 3 s, friendly chips + icons, nothing stored.
 - **⚡ Automate tab** — n8n-style actions: GitHub search/issues/create, Gmail send (app password), remote MCP servers (streamable HTTP), generic HTTP calls; credentials saved locally.
-- **📊 Office files** — agent creates styled `.xlsx`, `.csv`, `.docx` and returns downloadable chips; upload files to parse them back into chat.
+- **📄 Office files** — agent creates styled `.xlsx`, `.csv`, `.docx` **and multi-page `.pdf` reports** (headings, bullets, page numbers) as downloadable chips; upload files (Excel/CSV/TXT/Word/**PDF**) to parse them back into chat.
 - **🧠 Long-term memory** — facts auto-extracted from conversation, stored in the browser.
 - **🤖 Auto model routing** — quota-aware chain: Cerebras `gpt-oss-120b` → `zai-glm-4.7` → Groq `llama-3.3-70b-versatile` → `llama-3.1-8b-instant` → OpenCode free models (`laguna-s-2.1-free`, `nemotron-3-ultra-free`, `longcat-2.0-free`). Vision & STT use Groq qwen / whisper.
 - **⏰ 24/7 keep-alive** — GitHub Actions pings the backend every 10 minutes (`keepalive.yml`) so Render free never sleeps; the app also self-pings while open.

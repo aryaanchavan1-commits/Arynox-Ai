@@ -19,15 +19,36 @@ export async function POST(req) {
     const lang = lastUserLang(messages);
 
     if (image) {
-      const { reply, usedModel } = await groqChat({ messages, image, memory });
-      if (!reply) {
+      const vis = await groqChat({ messages, image, memory });
+      if (!vis.reply) {
         return Response.json(
           { error: "Groq is rate-limited or unreachable right now. Try again in a minute." },
           { status: 503 }
         );
       }
-      const newFacts = await extractMemory(userText, reply);
-      return Response.json({ reply, lang, memory: newFacts, model: usedModel, provider: "groq" });
+      try {
+        const augmented = [
+          ...messages,
+          { role: "user", content: `[The user attached the image shown above. Vision analysis of it (treat as ground truth): "${String(vis.reply).slice(0, 3000)}"]` },
+        ];
+        const result = await runAgent({ messages: augmented, memory, creds: body.creds || {} });
+        if (result.reply && !result.error) {
+          const newFacts = await extractMemory(userText, result.reply);
+          return Response.json({
+            reply: result.reply,
+            lang: result.lang || lang,
+            memory: newFacts,
+            model: result.model,
+            provider: result.provider || "",
+            tools: result.tools || [],
+            codeFiles: result.codeFiles || [],
+            files: result.files || [],
+            workspace: result.workspace || [],
+          });
+        }
+      } catch {}
+      const newFacts = await extractMemory(userText, vis.reply);
+      return Response.json({ reply: vis.reply, lang, memory: newFacts, model: vis.usedModel, provider: "groq" });
     }
 
     const result = await runAgent({ messages, memory, creds: body.creds || {} });

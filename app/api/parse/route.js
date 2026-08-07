@@ -1,6 +1,6 @@
 import { parseFile } from "@/lib/office";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 export const runtime = "nodejs";
 
 export async function POST(req) {
