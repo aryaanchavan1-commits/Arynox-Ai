@@ -39,7 +39,7 @@ function parseBlocks(content) {
   if (last < content.length) parts.push({ type: "text", html: md(content.slice(last)) });
   return parts.length ? parts : [{ type: "text", html: md(content) }];
 }
-const TOOL_ICONS = { web_search: "🔎", get_url: "📄", run_code: "⚙", create_excel: "📊", create_csv: "📄", create_docx: "📝", gmail_send: "✉️", github_search: "🐙", github_issues: "🐙", github_create_issue: "🐙", http_call: "🌐", mcp_call: "🔌" };
+const TOOL_ICONS = { web_search: "🔎", get_url: "📄", run_code: "⚙", write_file: "📝", read_file: "📖", edit_file: "✏️", list_files: "🗂", delete_file: "🗑", create_excel: "📊", create_csv: "📄", create_docx: "📝", gmail_send: "✉️", github_search: "🐙", github_issues: "🐙", github_create_issue: "🐙", http_call: "🌐", mcp_call: "🔌", mcp_list_tools: "🔌" };
 const OBJECT_ICONS = {
   person: "🧍", human: "🧍", man: "🧍", woman: "🧍", people: "🧍",
   laptop: "💻", computer: "💻", phone: "📱", smartphone: "📱",
@@ -71,7 +71,9 @@ export default function Home() {
   const [showMemory, setShowMemory] = useState(false);
   const [newFact, setNewFact] = useState("");
   const [theme, setTheme] = useState(() => load(KEY.theme, "auto"));
-  const [creds, setCreds] = useState(() => load(KEY.creds, { githubToken: "", gmailUser: "", gmailPass: "", mcpUrl: "", mcpToken: "" }));
+  const [creds, setCreds] = useState(() => load(KEY.creds, { githubToken: "", gmailUser: "", gmailPass: "", mcpUrl: "", mcpToken: "", mcpServers: [] }));
+  const [mcpInfo, setMcpInfo] = useState([]);
+  const [mcpBusy, setMcpBusy] = useState(false);
   const [autoLog, setAutoLog] = useState([]);
   const [autoRunning, setAutoRunning] = useState("");
 
@@ -247,6 +249,15 @@ export default function Home() {
           return next;
         });
       }
+      if (data.workspace?.length) {
+        setProject((prev) => {
+          const byName = new Map(prev.map((f) => [f.name, f]));
+          for (const wf of data.workspace) byName.set(wf.name, { name: wf.name, code: wf.code });
+          const next = [...byName.values()];
+          save(KEY.project, next);
+          return next;
+        });
+      }
       if (autoSpeak && !data.codeFiles?.length && !data.files?.length) speak(data.reply, data.lang || "en");
     } catch (err) {
       persist([...history, { role: "assistant", content: "Network error: " + err.message, lang: "en" }]);
@@ -351,7 +362,7 @@ export default function Home() {
 
   const ToolChips = ({ tools }) => {
     if (!tools?.length) return null;
-    const names = { web_search: "searched the web", get_url: "read a page", run_code: "ran code", create_excel: "made an Excel file", create_csv: "made a CSV", create_docx: "made a Word doc", gmail_send: "sent email", github_search: "GitHub", github_issues: "GitHub", github_create_issue: "GitHub", http_call: "HTTP call", mcp_call: "MCP" };
+    const names = { web_search: "searched the web", get_url: "read a page", run_code: "ran code", write_file: "wrote a file", read_file: "read a file", edit_file: "edited a file", list_files: "listed files", delete_file: "deleted a file", create_excel: "made an Excel file", create_csv: "made a CSV", create_docx: "made a Word doc", gmail_send: "sent email", github_search: "GitHub", github_issues: "GitHub", github_create_issue: "GitHub", http_call: "HTTP call", mcp_call: "MCP", mcp_list_tools: "MCP tools" };
     return <div className="tool-chips">{tools.map((t, i) => <span className="tool-chip" key={i}>{TOOL_ICONS[t.name] || "🔧"} {names[t.name] || t.name}</span>)}</div>;
   };
 
@@ -380,8 +391,55 @@ export default function Home() {
             {icons[f.type] || "📎"} {f.name} ⬇
           </button>
         ))}
+        {files.length > 1 && (
+          <button className="file-chip dl-all" onClick={() => downloadAll(files)}>📦 Download all (ZIP)</button>
+        )}
       </div>
     );
+  };
+
+  const downloadAll = async (fs) => {
+    const zip = new JSZip();
+    for (const f of fs) {
+      zip.file(f.name, Uint8Array.from(atob(f.dataBase64), (c) => c.charCodeAt(0)));
+    }
+    const blob = await zip.generateAsync({ type: "blob" });
+    download("arynox-files.zip", blob, "application/zip");
+  };
+
+  const downloadWorkspace = async () => {
+    try {
+      const res = await fetch("/api/workspace");
+      if (!res.ok) return;
+      const blob = await res.blob();
+      download("arynox-workspace.zip", blob, "application/zip");
+    } catch {}
+  };
+
+  const addMcpServer = () => {
+    const name = prompt("MCP server name (e.g. my-github):");
+    if (!name) return;
+    const url = prompt("MCP server URL (streamable HTTP):");
+    if (!url) return;
+    const token = prompt("Bearer token (optional):", "");
+    const next = [...(creds.mcpServers || []), { name: name.trim(), url: url.trim(), token }];
+    setCred("mcpServers", next);
+  };
+
+  const removeMcpServer = (i) => {
+    const next = [...(creds.mcpServers || [])];
+    next.splice(i, 1);
+    setCred("mcpServers", next);
+  };
+
+  const refreshMcp = async () => {
+    setMcpBusy(true);
+    try {
+      const res = await fetch("/api/mcp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", creds }) });
+      const d = await res.json();
+      setMcpInfo(res.ok ? d.servers || [] : [{ name: "?", tools: [], error: d.error || "failed" }]);
+    } catch (err) { setMcpInfo([{ name: "?", tools: [], error: err.message }]); }
+    finally { setMcpBusy(false); }
   };
 
   const file = project[activeFile] || project[0];
@@ -505,6 +563,7 @@ export default function Home() {
                 <button className="chip" onClick={addFile}>＋ File</button>
                 <button className="chip" onClick={() => { setRunOut(""); }}>⌫ Clear</button>
                 <button className="chip" onClick={downloadProject}>⬇ ZIP</button>
+                <button className="chip" onClick={downloadWorkspace} title="Download the agent workspace (all files the AI created)">🤖 Workspace ZIP</button>
                 <button className="send-btn ide-run" disabled={running} onClick={() => runCode(project.map((f) => f.code).join("\n"), "project")}>{running ? "Running..." : "▶ Run project"}</button>
               </div>
             </header>
@@ -606,13 +665,43 @@ export default function Home() {
                 <div className="auto-col">
                   <div className="auto-card">
                     <div className="auto-card-title">🔌 MCP servers (Model Context Protocol)</div>
-                    <input className="auto-input" placeholder="Remote MCP server URL (streamable HTTP)" value={creds.mcpUrl} onChange={(e) => setCred("mcpUrl", e.target.value)} />
-                    <input className="auto-input" type="password" placeholder="Bearer token (optional)" value={creds.mcpToken} onChange={(e) => setCred("mcpToken", e.target.value)} />
-                    <div className="auto-actions">
-                      <button className="chip" disabled={autoRunning !== ""} onClick={() => { const tool = prompt("MCP tool name:"); if (tool) runAutomation("mcp_call", { tool, params: {} }); }}>🔌 Call MCP tool</button>
-                      <button className="chip" disabled={autoRunning !== ""} onClick={() => { const url = prompt("Any HTTP endpoint URL:"); if (url) runAutomation("http_call", { method: "GET", url }); }}>🌐 HTTP GET</button>
+                    <p className="auto-note">Connect other apps (GitHub, Gmail, Slack, Notion, databases...) via any MCP server. The AI can then list and call their tools from chat.</p>
+                    <div className="mcp-list">
+                      {!creds.mcpServers?.length && !creds.mcpUrl && <div className="mem-empty">No servers connected yet.</div>}
+                      {creds.mcpServers?.map((s, i) => (
+                        <div className="mcp-row" key={i}>
+                          <div className="mcp-row-main">
+                            <b>{s.name}</b>
+                            <span className="mcp-row-url">{s.url}</span>
+                            {mcpInfo[i]?.error && <span className="mcp-err">✗ {mcpInfo[i].error}</span>}
+                            {!mcpInfo[i]?.error && mcpInfo[i] && (
+                              <span className="mcp-ok">✓ {mcpInfo[i].tools.length} tools</span>
+                            )}
+                          </div>
+                          <button className="icon-btn" title="Remove" onClick={() => removeMcpServer(i)}>🗑</button>
+                        </div>
+                      ))}
                     </div>
-                    <p className="auto-note">Paste any remote MCP server URL (e.g. hosted GitHub/Gmail MCP) and Arynox AI can call its tools from chat too.</p>
+                    <div className="auto-actions">
+                      <button className="chip" disabled={mcpBusy} onClick={refreshMcp}>{mcpBusy ? "Discovering..." : "🔍 Discover tools"}</button>
+                      <button className="chip" disabled={mcpBusy} onClick={addMcpServer}>＋ Add server</button>
+                      <button className="chip" disabled={mcpBusy} onClick={() => { const tool = prompt("MCP tool name:"); const server = prompt("Server name (or leave blank for first):") || ""; if (tool) runAutomation("mcp_call", { server, tool, params: {} }); }}>🔌 Call MCP tool</button>
+                    </div>
+                    {mcpInfo.filter((s) => !s.error).length > 0 && (
+                      <div className="mcp-tools">
+                        {mcpInfo.map((s, i) => !s.error && (
+                          <div key={i}>
+                            <div className="mcp-server-name">{s.name} — {s.tools.length} tools</div>
+                            {s.tools.slice(0, 10).map((t, j) => (
+                              <div className="mcp-tool" key={j} title={t.description || ""}>
+                                <b>{t.name}</b> {t.description ? <em>{t.description.slice(0, 90)}</em> : null}
+                              </div>
+                            ))}
+                            {s.tools.length > 10 && <div className="mcp-server-name">+{s.tools.length - 10} more</div>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="auto-card">
                     <div className="auto-card-title">💬 Just ask in chat</div>

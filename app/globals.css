@@ -334,6 +334,22 @@ html, body {
 .auto-log-body { margin: 0; padding: 16px; max-height: 240px; overflow: auto; font-family: Consolas, monospace; font-size: 13px; line-height: 1.6; color: #c8f4ff; white-space: pre-wrap; }
 .auto-log .chip { align-self: flex-start; margin: 10px 14px; }
 
+.mcp-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.mcp-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border);
+  background: rgba(124, 92, 255, 0.06);
+}
+.mcp-row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mcp-row-url { font-size: 11.5px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-ok { font-size: 11.5px; color: #4ade80; font-weight: 600; }
+.mcp-err { font-size: 11.5px; color: #f87171; }
+.mcp-tools { margin-top: 4px; display: flex; flex-direction: column; gap: 10px; }
+.mcp-server-name { font-size: 11.5px; font-weight: 700; color: #b7a8ff; margin: 6px 0 2px; }
+.mcp-tool { font-size: 12px; padding: 4px 8px; border-radius: 8px; background: rgba(124, 92, 255, 0.08); margin: 3px 0; }
+.mcp-tool em { color: var(--text2); font-size: 11px; margin-left: 6px; }
+.dl-all { background: rgba(0, 212, 255, 0.12) !important; border-color: rgba(0, 212, 255, 0.35) !important; }
+
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }

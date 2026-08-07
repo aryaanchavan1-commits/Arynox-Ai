@@ -44,6 +44,7 @@ export async function POST(req) {
       tools: result.tools || [],
       codeFiles: result.codeFiles || [],
       files: result.files || [],
+      workspace: result.workspace || [],
     });
   } catch (err) {
     return Response.json({ error: String(err?.message || err).slice(0, 300) }, { status: 500 });
