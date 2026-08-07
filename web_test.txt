@@ -1,0 +1,7 @@
+CHAT-HI status=200: reply=नमस्ते आर्यन, आपका स्वागत है। मुझे यह जानकर खुशी हुई कि आपको कॉफी पसंद है। कॉफी पीने का आपका पसंदीदा तरीका क्या है, गर्म या ठंडा? lang=hi model=llama-3.3-70b-versatile autoMemory=["User's name is Aryan", 'User likes coffee']
+CHAT-MEM status=200: reply=आपका नाम आर्यन है। model=llama-3.1-8b-instant
+CHAT-EN status=200: reply=Hello, it's nice to meet you, how can I assist you today? model=llama-3.3-70b-versatile
+TTS-en status=500 type=application/json bytes=43
+TTS-hi status=500 type=application/json bytes=43
+TTS-mr status=500 type=application/json bytes=43
+STT status=200: text=नमस्ते मेरा नाम आर्यन है lang=hi

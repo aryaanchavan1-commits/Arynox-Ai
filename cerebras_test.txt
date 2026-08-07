@@ -1,0 +1,3 @@
+zai-glm-4.7 => {'reasoning': '1.  **Analyze the input:**\n    *   User says: "नमस्ते, मेरा नाम आर्यन है। तुम कौन हो? एक छोटे वाक्य में बताओ।"\n    *   Language: Hind
+gpt-oss-120b => मैं OpenAI द्वारा बनाया गया एक कृत्रिम बुद्धिमत्ता वाला चैटबॉट हूँ।
+tools-test: OK null
