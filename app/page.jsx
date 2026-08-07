@@ -27,6 +27,7 @@ function md(s) {
     .replace(/^## (.+)$/gm, "<h3>$1</h3>")
     .replace(/^# (.+)$/gm, "<h2>$1</h2>")
     .replace(/^[-•] (.+)$/gm, "<li>$1</li>")
+    .replace(/(?:<li>.*?<\/li>(?:\n)?)+/g, (m) => "<ul class=\"md-list\">" + m.replace(/\n/g, "") + "</ul>")
     .replace(/\n\n/g, "<br/>");
 }
 function parseBlocks(content) {
@@ -104,6 +105,7 @@ export default function Home() {
   const chunksRef = useRef([]);
   const fileRef = useRef(null);
   const officeRef = useRef(null);
+  const pendingPromptRef = useRef("");
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const detectTimer = useRef(null);
@@ -128,7 +130,10 @@ export default function Home() {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
   useEffect(() => () => { stopCamera(); }, []);
 
-  const persist = (msgs) => { setMessages(msgs); save(KEY.history, msgs.slice(-40).map((m) => ({ role: m.role, content: m.content, lang: m.lang }))); };
+  const persist = (msgs) => {
+    setMessages(msgs);
+    save(KEY.history, msgs.slice(-40).map((m) => ({ role: m.role, content: m.content, lang: m.lang, image: m.image, files: m.files, tools: m.tools, codeFiles: m.codeFiles })));
+  };
 
   const setCred = (k, v) => setCreds((prev) => { const next = { ...prev, [k]: v }; save(KEY.creds, next); return next; });
 
@@ -136,7 +141,7 @@ export default function Home() {
     if (!text) return;
     try {
       audioRef.current?.pause();
-      const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: lang || "en" }) });
+      const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: lang || "en" }), signal: AbortSignal.timeout(30000) });
       if (!res.ok) return;
       const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "audio/mpeg" }));
       const a = new Audio(url);
@@ -175,7 +180,7 @@ export default function Home() {
     setRunOut(`▶ Running ${label || "code"}...`);
     try {
       const language = (label || "").toLowerCase().endsWith(".py") ? "python" : "javascript";
-      const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, language }) });
+      const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, language }), signal: AbortSignal.timeout(30000) });
       const d = await res.json();
       if (!res.ok) { setRunOut("Error: " + (d.error || "run failed")); return; }
       const parts = [];
@@ -196,7 +201,7 @@ export default function Home() {
       for (const f of project) {
         const language = f.name.toLowerCase().endsWith(".py") ? "python" : "javascript";
         out.push(`— ${f.name} (${language}) —`);
-        const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: f.code, language }) });
+        const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: f.code, language }), signal: AbortSignal.timeout(30000) });
         const d = await res.json();
         if (d.error) out.push("⛔ " + d.error);
         if (d.output) out.push(d.output);
@@ -228,7 +233,7 @@ export default function Home() {
     setAutoRunning(action);
     setAutoLog((prev) => [...prev, `▶ ${action}...`]);
     try {
-      const res = await fetch("/api/automation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, params, creds }) });
+      const res = await fetch("/api/automation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, params, creds }), signal: AbortSignal.timeout(60000) });
       const d = await res.json();
       setAutoLog((prev) => [...prev, res.ok && d.ok ? `✓ ${d.result}` : `✗ ${d.error || res.status}`]);
       if (res.ok && d.ok) speak(d.result.slice(0, 300), "en");
@@ -251,7 +256,7 @@ export default function Home() {
     if (gen) {
       const prompt = genMode ? text.replace(GEN_RE, "").trim() || text : text.replace(/^(generate|create|draw|make|imagine|render|show|give)\s+(me\s+)?/i, "").trim().replace(/[.!?]+$/, "") || text;
       try {
-        const res = await fetch("/api/gen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, width: 1024, height: 1024 }) });
+        const res = await fetch("/api/gen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, width: 1024, height: 1024 }), signal: AbortSignal.timeout(150000) });
         const d = await res.json();
         if (res.ok) persist([...history, { role: "assistant", content: prompt, image: d.url, lang: "en" }]);
         else persist([...history, { role: "assistant", content: "⚠️ " + (d.error || "Could not create the image."), lang: "en" }]);
@@ -261,7 +266,17 @@ export default function Home() {
     }
 
     try {
-      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: history.slice(-24), memory, image: image || null, creds }) });
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: history.slice(-16).map((m) => (m.role === "user" && m.image ? { ...m, image: null } : m)),
+          memory,
+          image: image || null,
+          creds,
+        }),
+        signal: AbortSignal.timeout(180000),
+      });
       const data = await res.json();
       if (!res.ok) {
         persist([...history, { role: "assistant", content: data.error || "Something went wrong.", lang: "en" }]);
@@ -313,16 +328,20 @@ export default function Home() {
 
   const onPickOfficeFile = async (e) => {
     const file = e.target.files?.[0];
-    if (!file || busy) return;
+    if (!file) return;
+    e.target.value = "";
+    if (busy) { setStatus("wait - the agent is working"); return; }
     setBusy(true);
     setStatus("reading " + file.name + "...");
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("/api/parse", { method: "POST", body: form });
+      const res = await fetch("/api/parse", { method: "POST", body: form, signal: AbortSignal.timeout(90000) });
       const d = await res.json();
       const content = res.ok ? d.text : "Could not read the file.";
-      await send(`Here is the content of the file "${file.name}" (${file.size} bytes):\n\n${content.slice(0, 8000)}\n\nNow help me with it.`);
+      const task = pendingPromptRef.current || "Now help me with it.";
+      pendingPromptRef.current = "";
+      await send(`Here is the content of the file "${file.name}" (${file.size} bytes):\n\n${content.slice(0, 8000)}\n\n${task}`);
     } catch (err) { persist([...messages, { role: "assistant", content: "File error: " + err.message, lang: "en" }]); }
     finally { setBusy(false); setStatus("ready"); }
   };
@@ -343,7 +362,7 @@ export default function Home() {
           const wav = await webmToWav(blob);
           const form = new FormData();
           form.append("audio", new File([wav], "voice.wav", { type: "audio/wav" }));
-          const res = await fetch("/api/stt", { method: "POST", body: form });
+          const res = await fetch("/api/stt", { method: "POST", body: form, signal: AbortSignal.timeout(45000) });
           const data = await res.json();
           if (res.ok && data.text) { setInput(data.text); setStatus("ready"); setTimeout(() => send(data.text), 60); }
           else setStatus("could not hear - try again");
@@ -411,7 +430,7 @@ export default function Home() {
         <span className="codeblock-file">{filename || "code"}</span>
         <div className="codeblock-actions">
           <button onClick={() => runCode(code, filename)}>▶ Run</button>
-          <button onClick={() => { setProject((prev) => { const names = new Set(prev.map((f) => f.name)); let n = filename || "solution.js", i = 1; while (names.has(n)) { n = (filename || "solution").replace(".js", `_${i++}.js`); } const next = [...prev, { name: n, code }]; save(KEY.project, next); return next; }); setActiveFile(project.length); setTab("ide"); }}>Open in IDE</button>
+          <button onClick={() => { setProject((prev) => { const names = new Set(prev.map((f) => f.name)); const orig = filename || "solution.js"; const extIdx = orig.lastIndexOf("."); const base = extIdx > 0 ? orig.slice(0, extIdx) : orig; const ext = extIdx > 0 ? orig.slice(extIdx) : ".js"; let n = orig, i = 1; while (names.has(n)) { n = `${base}_${i++}${ext}`; } const next = [...prev, { name: n, code }]; save(KEY.project, next); return next; }); setActiveFile(project.length); setTab("ide"); }}>Open in IDE</button>
           <button onClick={() => download(filename || "script.js", code)}>⬇</button>
           <button onClick={() => navigator.clipboard?.writeText(code)}>⧉</button>
         </div>
@@ -448,7 +467,7 @@ export default function Home() {
 
   const downloadWorkspace = async () => {
     try {
-      const res = await fetch("/api/workspace");
+      const res = await fetch("/api/workspace", { signal: AbortSignal.timeout(60000) });
       if (!res.ok) return;
       const blob = await res.blob();
       download("arynox-workspace.zip", blob, "application/zip");
@@ -469,12 +488,13 @@ export default function Home() {
     const next = [...(creds.mcpServers || [])];
     next.splice(i, 1);
     setCred("mcpServers", next);
+    setMcpInfo([]);
   };
 
   const refreshMcp = async () => {
     setMcpBusy(true);
     try {
-      const res = await fetch("/api/mcp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", creds }) });
+      const res = await fetch("/api/mcp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", creds }), signal: AbortSignal.timeout(60000) });
       const d = await res.json();
       setMcpInfo(res.ok ? d.servers || [] : [{ name: "?", tools: [], error: d.error || "failed" }]);
     } catch (err) { setMcpInfo([{ name: "?", tools: [], error: err.message }]); }
@@ -539,12 +559,12 @@ export default function Home() {
                   <div className="welcome-title">Arynox AI</div>
                   <div className="welcome-sub">Your AI in English, हिन्दी and मराठी<br />I detect what you need — code, images, research, office files — and just do it</div>
                   <div className="sugg-grid">
-                    <button className="sugg-card" onClick={() => setInput("Build a calculator app in Python")}><span>🧮</span><div><b>Calculator app</b><em>Python project, run & verify</em></div></button>
-                    <button className="sugg-card" onClick={() => setInput("Create a monthly budget in Excel")}><span>📊</span><div><b>Excel budget</b><em>Spreadsheet, ready to download</em></div></button>
-                    <button className="sugg-card" onClick={() => setInput("What's today's latest tech news?")}><span>🔎</span><div><b>Live info</b><em>Search the web for answers</em></div></button>
-                    <button className="sugg-card" onClick={() => setInput("Draw a futuristic city at night")}><span>🖼️</span><div><b>Generate an image</b><em>Create art on demand</em></div></button>
-                    <button className="sugg-card" onClick={() => setInput("Build a to-do app with HTML, CSS and JS")}><span>💻</span><div><b>Web app project</b><em>Multi-file app in your IDE</em></div></button>
-                    <button className="sugg-card" onClick={() => setInput("Summarize this file")}><span>📎</span><div><b>Work with files</b><em>Excel, CSV, Word, images</em></div></button>
+                    <button className="sugg-card" onClick={() => send("Build a calculator app in Python")}><span>🧮</span><div><b>Calculator app</b><em>Python project, run & verify</em></div></button>
+                    <button className="sugg-card" onClick={() => send("Create a monthly budget in Excel")}><span>📊</span><div><b>Excel budget</b><em>Spreadsheet, ready to download</em></div></button>
+                    <button className="sugg-card" onClick={() => send("What's today's latest tech news?")}><span>🔎</span><div><b>Live info</b><em>Search the web for answers</em></div></button>
+                    <button className="sugg-card" onClick={() => send("Draw a futuristic city at night")}><span>🖼️</span><div><b>Generate an image</b><em>Create art on demand</em></div></button>
+                    <button className="sugg-card" onClick={() => send("Build a to-do app with HTML, CSS and JS")}><span>💻</span><div><b>Web app project</b><em>Multi-file app in your IDE</em></div></button>
+                    <button className="sugg-card" onClick={() => { pendingPromptRef.current = "Summarize this file"; officeRef.current?.click(); }}><span>📎</span><div><b>Work with files</b><em>Excel, CSV, Word, images</em></div></button>
                   </div>
                   <div className="welcome-hints"><span>🎤 Talk</span><span>📷 Photo</span><span>✨ Image mode</span><span>💻 Code</span><span>⚡ Automate</span></div>
                 </div>
@@ -562,7 +582,7 @@ export default function Home() {
                       </div>
                     ) : (
                       <div className="bubble">
-                        {parseBlocks(m.content).map((p, j) => p.type === "code" ? <CodeBlock key={j} code={p.code} filename={`solution_${j + 1}.js`} /> : <span key={j} dangerouslySetInnerHTML={{ __html: p.html }} />)}
+                        {parseBlocks(m.content).map((p, j) => p.type === "code" ? <CodeBlock key={j} code={p.code} filename={`solution_${j + 1}.${p.language === "python" ? "py" : "js"}`} /> : <span key={j} dangerouslySetInnerHTML={{ __html: p.html }} />)}
                       </div>
                     )}
                     {m.role === "assistant" && <FileChips files={m.files} />}

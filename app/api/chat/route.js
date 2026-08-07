@@ -18,7 +18,7 @@ export async function POST(req) {
 
     const lang = lastUserLang(messages);
 
-    if (image || messages.some((m) => m.image)) {
+    if (image) {
       const { reply, usedModel } = await groqChat({ messages, image, memory });
       if (!reply) {
         return Response.json(
@@ -27,7 +27,7 @@ export async function POST(req) {
         );
       }
       const newFacts = await extractMemory(userText, reply);
-      return Response.json({ reply, lang, memory: newFacts, model: usedModel });
+      return Response.json({ reply, lang, memory: newFacts, model: usedModel, provider: "groq" });
     }
 
     const result = await runAgent({ messages, memory, creds: body.creds || {} });
