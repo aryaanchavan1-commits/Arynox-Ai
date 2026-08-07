@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
+import { python } from "@codemirror/lang-python";
 import { oneDark } from "@codemirror/theme-one-dark";
 import JSZip from "jszip";
+import { classify } from "@/lib/intent";
 
 const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds" };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -76,6 +78,14 @@ export default function Home() {
   const [mcpBusy, setMcpBusy] = useState(false);
   const [autoLog, setAutoLog] = useState([]);
   const [autoRunning, setAutoRunning] = useState("");
+  const [busyStep, setBusyStep] = useState(0);
+
+  const BUSY_STEPS = ["Thinking…", "Working…", "Researching…", "Coding…", "Running…", "Finalizing…"];
+  useEffect(() => {
+    if (!busy) { setBusyStep(0); return; }
+    const iv = setInterval(() => setBusyStep((s) => (s + 1) % BUSY_STEPS.length), 2600);
+    return () => clearInterval(iv);
+  }, [busy]);
 
   const [project, setProject] = useState(() => load(KEY.project, DEFAULT_PROJECT));
   const [activeFile, setActiveFile] = useState(0);
@@ -109,6 +119,12 @@ export default function Home() {
   }, [theme, effectiveTheme]);
 
   useEffect(() => { setMemory(load(KEY.memory, [])); setMessages(load(KEY.history, [])); }, []);
+  useEffect(() => {
+    const ping = () => { try { fetch("/api/ping").catch(() => {}); } catch {} };
+    ping();
+    const iv = setInterval(ping, 540000);
+    return () => clearInterval(iv);
+  }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
   useEffect(() => () => { stopCamera(); }, []);
 
@@ -158,7 +174,8 @@ export default function Home() {
     setRunning(true);
     setRunOut(`▶ Running ${label || "code"}...`);
     try {
-      const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+      const language = (label || "").toLowerCase().endsWith(".py") ? "python" : "javascript";
+      const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, language }) });
       const d = await res.json();
       if (!res.ok) { setRunOut("Error: " + (d.error || "run failed")); return; }
       const parts = [];
@@ -171,7 +188,29 @@ export default function Home() {
     finally { setRunning(false); }
   };
 
+  const runProject = async () => {
+    setRunning(true);
+    setRunOut("▶ Running project...");
+    try {
+      const out = [];
+      for (const f of project) {
+        const language = f.name.toLowerCase().endsWith(".py") ? "python" : "javascript";
+        out.push(`— ${f.name} (${language}) —`);
+        const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: f.code, language }) });
+        const d = await res.json();
+        if (d.error) out.push("⛔ " + d.error);
+        if (d.output) out.push(d.output);
+        out.push("");
+      }
+      setRunOut(out.join("\n") || "✓ Finished (no output)");
+    } catch (err) { setRunOut("Error: " + err.message); }
+    finally { setRunning(false); }
+  };
+
+  const langOf = (name) => (name || "").toLowerCase().endsWith(".py") ? python() : javascript();
+
   const setFileCode = (i, code) => setProject((prev) => { const next = prev.map((f, j) => (j === i ? { ...f, code } : f)); save(KEY.project, next); return next; });
+
   const addFile = () => {
     const name = (newFileName.trim() || "new-file.js").replace(/[^a-zA-Z0-9._-]/g, "_");
     setProject((prev) => { const next = [...prev, { name, code: "// " + name + "\n\n" }]; save(KEY.project, next); return next; });
@@ -201,7 +240,7 @@ export default function Home() {
     const text = (textOverride ?? input).trim();
     if (!text || busy) return;
     setInput("");
-    const gen = genMode || GEN_RE.test(text);
+    const gen = genMode || classify(text) === "image";
     const userMsg = { role: "user", content: text, image };
     const history = [...messages, userMsg];
     persist(history);
@@ -210,7 +249,7 @@ export default function Home() {
     setStatus(gen ? "creating your image..." : "thinking...");
 
     if (gen) {
-      const prompt = text.replace(GEN_RE, "").trim() || text;
+      const prompt = genMode ? text.replace(GEN_RE, "").trim() || text : text.replace(/^(generate|create|draw|make|imagine|render|show|give)\s+(me\s+)?/i, "").trim().replace(/[.!?]+$/, "") || text;
       try {
         const res = await fetch("/api/gen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, width: 1024, height: 1024 }) });
         const d = await res.json();
@@ -234,7 +273,7 @@ export default function Home() {
       if (Array.isArray(data.memory) && data.memory.length) {
         setMemory((prev) => { const next = [...prev]; for (const f of data.memory) if (!next.includes(f)) next.push(f); save(KEY.memory, next); return next; });
       }
-      setModelBadge(data.model ? `${data.model}` : "");
+      setModelBadge(data.model ? `${data.provider || ""} · ${data.model}` : "");
       if (data.codeFiles?.length) {
         setProject((prev) => {
           const names = new Set(prev.map((f) => f.name));
@@ -485,10 +524,11 @@ export default function Home() {
         {tab === "chat" && (
           <>
             <header className="topbar">
-              <div className="brand"><span className={`dot ${busy || recording ? "busy" : ""}`} /><span className="status">{recording ? "listening..." : status}</span></div>
+              <div className="brand"><span className={`dot ${busy || recording ? "busy" : ""}`} /><span className="status">{recording ? "listening..." : busy ? BUSY_STEPS[busyStep] : status}</span></div>
               <div className="toggles">
                 <label className="chip"><input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} /> 🔊 Speak</label>
                 <label className={`chip ${genMode ? "on" : ""}`}><input type="checkbox" checked={genMode} onChange={(e) => setGenMode(e.target.checked)} /> ✨ Image mode</label>
+                <button className="chip" title="Clear chat" onClick={() => { setMessages([]); save(KEY.history, []); }}>🗑 New chat</button>
               </div>
             </header>
 
@@ -497,8 +537,16 @@ export default function Home() {
                 <div className="welcome">
                   <div className="welcome-logo">✦</div>
                   <div className="welcome-title">Arynox AI</div>
-                  <div className="welcome-sub">Your AI in English, हिन्दी and मराठी<br />Ask me anything, research, code, build Excel files, or show me a photo</div>
-                  <div className="welcome-hints"><span>🎤 Talk</span><span>📷 Photo</span><span>✨ Create images</span><span>📊 Excel</span><span>💻 Code</span><span>⚡ Automate</span></div>
+                  <div className="welcome-sub">Your AI in English, हिन्दी and मराठी<br />I detect what you need — code, images, research, office files — and just do it</div>
+                  <div className="sugg-grid">
+                    <button className="sugg-card" onClick={() => setInput("Build a calculator app in Python")}><span>🧮</span><div><b>Calculator app</b><em>Python project, run & verify</em></div></button>
+                    <button className="sugg-card" onClick={() => setInput("Create a monthly budget in Excel")}><span>📊</span><div><b>Excel budget</b><em>Spreadsheet, ready to download</em></div></button>
+                    <button className="sugg-card" onClick={() => setInput("What's today's latest tech news?")}><span>🔎</span><div><b>Live info</b><em>Search the web for answers</em></div></button>
+                    <button className="sugg-card" onClick={() => setInput("Draw a futuristic city at night")}><span>🖼️</span><div><b>Generate an image</b><em>Create art on demand</em></div></button>
+                    <button className="sugg-card" onClick={() => setInput("Build a to-do app with HTML, CSS and JS")}><span>💻</span><div><b>Web app project</b><em>Multi-file app in your IDE</em></div></button>
+                    <button className="sugg-card" onClick={() => setInput("Summarize this file")}><span>📎</span><div><b>Work with files</b><em>Excel, CSV, Word, images</em></div></button>
+                  </div>
+                  <div className="welcome-hints"><span>🎤 Talk</span><span>📷 Photo</span><span>✨ Image mode</span><span>💻 Code</span><span>⚡ Automate</span></div>
                 </div>
               )}
               {messages.map((m, i) => (
@@ -564,7 +612,7 @@ export default function Home() {
                 <button className="chip" onClick={() => { setRunOut(""); }}>⌫ Clear</button>
                 <button className="chip" onClick={downloadProject}>⬇ ZIP</button>
                 <button className="chip" onClick={downloadWorkspace} title="Download the agent workspace (all files the AI created)">🤖 Workspace ZIP</button>
-                <button className="send-btn ide-run" disabled={running} onClick={() => runCode(project.map((f) => f.code).join("\n"), "project")}>{running ? "Running..." : "▶ Run project"}</button>
+                <button className="send-btn ide-run" disabled={running} onClick={runProject}>{running ? "Running..." : "▶ Run project"}</button>
               </div>
             </header>
             <div className="ide-split">
@@ -583,7 +631,7 @@ export default function Home() {
                   <button className="chip" onClick={() => runCode(file?.code || "", file?.name)}>▶ Run this file</button>
                 </div>
                 <div className="editor-wrap">
-                  <CodeMirror value={file?.code || ""} height="100%" theme={oneDark} extensions={[javascript()]} onChange={(v) => setFileCode(activeFile, v)} />
+                  <CodeMirror value={file?.code || ""} height="100%" theme={oneDark} extensions={[langOf(file?.name)]} onChange={(v) => setFileCode(activeFile, v)} />
                 </div>
               </div>
               <div className="console">
