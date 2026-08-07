@@ -1,0 +1,15 @@
+name: Keep Arynox AI Awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend (Render)
+        run: curl -fsS -o /dev/null --max-time 60 https://arynox-ai.onrender.com/api/ping || true
+      - name: Ping frontend (Vercel)
+        run: curl -fsS -o /dev/null --max-time 30 https://arynox-ai.vercel.app/api/ping || true
