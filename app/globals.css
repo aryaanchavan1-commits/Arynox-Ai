@@ -507,10 +507,14 @@ html, body {
     background: var(--bg2); backdrop-filter: blur(20px);
   }
   .rail-brand { display: none; }
-  .rail-nav { flex-direction: row; flex: 1; justify-content: space-around; }
+  .rail-nav { flex-direction: row; flex: 1; justify-content: space-between; gap: 0; }
   .rail-convos, .rail-sec-label { display: none; }
   .rail-head { display: none; }
-  .rail-foot { flex-direction: row; gap: 4px; margin-top: 0; }
+  .rail-foot { flex-direction: row; gap: 2px; margin-top: 0; }
+  .rail-foot button span { display: none; }
+  .rail-foot button { padding: 6px 9px; }
+  .user-email { display: none; }
+  .user-chip { padding: 5px 8px !important; }
   .rail-nav button, .rail-foot button { flex-direction: column; gap: 2px; padding: 6px 10px; font-size: 10.5px; }
   .rail-nav button span, .rail-foot button span { font-size: 10px; }
   .model-badge { display: none; }
