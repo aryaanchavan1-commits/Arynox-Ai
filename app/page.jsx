@@ -75,8 +75,8 @@ export default function Home() {
   const [recording, setRecording] = useState(false);
   const [image, setImage] = useState(null);
   const [genMode, setGenMode] = useState(false);
-  const [autoSpeak, setAutoSpeak] = useState(true);
-  const [status, setStatus] = useState("ready");
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [toast, setToast] = useState("");
   const [modelBadge, setModelBadge] = useState("");
   const [showMemory, setShowMemory] = useState(false);
   const [newFact, setNewFact] = useState("");
@@ -127,6 +127,13 @@ export default function Home() {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const detectTimer = useRef(null);
+  const toastTimer = useRef(null);
+
+  const showToast = (t) => {
+    setToast(t);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 4200);
+  };
 
   const effectiveTheme = theme === "auto" ? (hour() < 6 || hour() >= 18 ? "dark" : "light") : theme;
 
@@ -154,7 +161,7 @@ export default function Home() {
 
   useEffect(() => {
     const onPrompt = (e) => { e.preventDefault(); setDeferredInstall(e); };
-    const onInstalled = () => { setDeferredInstall(null); setIsInstalled(true); setStatus("✅ app installed — find Arynox AI in your apps"); };
+    const onInstalled = () => { setDeferredInstall(null); setIsInstalled(true); showToast("✅ app installed — find Arynox AI in your apps"); };
     window.addEventListener("beforeinstallprompt", onPrompt);
     window.addEventListener("appinstalled", onInstalled);
     if (window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone) setIsInstalled(true);
@@ -167,9 +174,9 @@ export default function Home() {
       try { await deferredInstall.userChoice; } catch {}
       setDeferredInstall(null);
     } else if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-      setStatus("📲 iPhone/iPad: tap the Share button → Add to Home Screen");
+      showToast("📲 iPhone/iPad: tap the Share button → Add to Home Screen");
     } else {
-      setStatus("📲 install: Chrome/Edge menu → Install Arynox AI (or the install icon in the address bar)");
+      showToast("📲 Chrome/Edge menu → Install Arynox AI");
     }
   };
 
@@ -198,7 +205,7 @@ export default function Home() {
 
   const friendlyAuthError = (err) => {
     const m = String(err?.message || err || "");
-    if (m.includes("Unsupported provider")) return "Google sign-in is being set up by the app owner (Automate tab → Google guide). Use Email/Password in the meantime.";
+    if (m.includes("Unsupported provider")) return "Google sign-in isn't available right now — try again in a moment, or use Email/Password.";
     if (m.includes("Invalid login credentials")) return "Wrong email or password.";
     if (m.includes("Email not confirmed")) return "Please confirm your email first — check your inbox for the confirmation link.";
     if (m.includes("User already registered")) return "This email is already registered — try signing in instead.";
@@ -222,7 +229,7 @@ export default function Home() {
           setUser(u);
           save(KEY.session, u);
           setAuthOpen(false);
-          setStatus(`welcome, ${u.name}`);
+          showToast(`👋 welcome, ${u.name}`);
         }
       } else {
         const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { full_name: authName.trim() || email.split("@")[0] } } });
@@ -232,7 +239,7 @@ export default function Home() {
           setUser(u);
           save(KEY.session, u);
           setAuthOpen(false);
-          setStatus(`welcome, ${u.name}`);
+          showToast(`👋 welcome, ${u.name}`);
         } else {
           setAuthError("Account created! Check your email to confirm, then sign in.");
           setAuthTab("in");
@@ -253,7 +260,7 @@ export default function Home() {
     try { await sb.auth.signOut(); } catch {}
     setUser(null);
     save(KEY.session, null);
-    setStatus("signed out - you can keep using it as a guest");
+    showToast("👋 signed out — you can keep using it as a guest");
   };
 
   const setBusinessProfile = (patch) => setBusiness((prev) => { const next = { ...(prev || {}), ...patch }; save(KEY.business, next); return next; });
@@ -281,7 +288,6 @@ export default function Home() {
     setMessages([]);
     save(KEY.history, []);
     setActiveConvId(null);
-    setStatus("ready");
   };
 
   const openConvo = (id) => {
@@ -397,9 +403,9 @@ export default function Home() {
     const files = e.target.files;
     e.target.value = "";
     if (!files?.length) return;
-    if (busy) { setStatus("wait - the agent is working"); return; }
+    if (busy) { showToast("⏳ wait — the agent is working"); return; }
     setBusy(true);
-    setStatus("uploading project...");
+    showToast("📦 uploading project...");
     try {
       const items = [];
       for (const f of files) {
@@ -421,8 +427,8 @@ export default function Home() {
       save(KEY.project, proj);
       setActiveFile(0);
       setTab("ide");
-      setStatus(`uploaded ${d.files.length} files - tell me what to do with them`);
-    } catch (err) { setStatus("upload failed: " + err.message); }
+      showToast(`📦 uploaded ${d.files.length} files — tell me what to do with them`);
+    } catch (err) { showToast("⚠️ upload failed: " + err.message); }
     finally { setBusy(false); }
   };
 
@@ -448,7 +454,6 @@ export default function Home() {
     persist(history);
     setImage(null);
     setBusy(true);
-    setStatus(gen ? "creating your image..." : "thinking...");
 
     if (gen) {
       const prompt = genMode ? text.replace(GEN_RE, "").trim() || text : text.replace(/^(generate|create|draw|make|imagine|render|show|give)\s+(me\s+)?/i, "").trim().replace(/[.!?]+$/, "") || text;
@@ -458,7 +463,7 @@ export default function Home() {
         if (res.ok) persist([...history, { role: "assistant", content: prompt, image: d.url, lang: "en" }]);
         else persist([...history, { role: "assistant", content: "⚠️ " + (d.error || "Could not create the image."), lang: "en" }]);
       } catch (err) { persist([...history, { role: "assistant", content: "⚠️ Image error: " + err.message, lang: "en" }]); }
-      setStatus("ready"); setBusy(false);
+        setBusy(false);
       return;
     }
 
@@ -478,7 +483,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) {
         persist([...history, { role: "assistant", content: data.error || "Something went wrong.", lang: "en" }]);
-        setStatus("ready"); setBusy(false);
+      setBusy(false);
         return;
       }
       const aiMsg = { role: "assistant", content: data.reply, lang: data.lang || "en", tools: data.tools || [], codeFiles: data.codeFiles || [], files: data.files || [] };
@@ -513,7 +518,7 @@ export default function Home() {
       if (autoSpeak && !data.codeFiles?.length && !data.files?.length) speak(data.reply, data.lang || "en");
     } catch (err) {
       persist([...history, { role: "assistant", content: "Network error: " + err.message, lang: "en" }]);
-    } finally { setStatus("ready"); setBusy(false); }
+    } finally { setBusy(false); }
   };
 
   const onPickImage = (e) => {
@@ -528,9 +533,9 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-    if (busy) { setStatus("wait - the agent is working"); return; }
+    if (busy) { showToast("⏳ wait — the agent is working"); return; }
     setBusy(true);
-    setStatus("reading " + file.name + "...");
+    showToast("📄 reading " + file.name + "...");
     try {
       const form = new FormData();
       form.append("file", file);
@@ -541,7 +546,7 @@ export default function Home() {
       pendingPromptRef.current = "";
       await send(`Here is the content of the file "${file.name}" (${file.size} bytes):\n\n${content.slice(0, 8000)}\n\n${task}`);
     } catch (err) { persist([...messages, { role: "assistant", content: "File error: " + err.message, lang: "en" }]); }
-    finally { setBusy(false); setStatus("ready"); }
+    finally { setBusy(false); }
   };
 
   const startRecord = async () => {
@@ -555,22 +560,20 @@ export default function Home() {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunksRef.current, { type: mime });
         if (blob.size < 1000) { setRecording(false); return; }
-        setStatus("listening...");
         try {
           const wav = await webmToWav(blob);
           const form = new FormData();
           form.append("audio", new File([wav], "voice.wav", { type: "audio/wav" }));
           const res = await fetch("/api/stt", { method: "POST", body: form, signal: AbortSignal.timeout(45000) });
           const data = await res.json();
-          if (res.ok && data.text) { setInput(data.text); setStatus("ready"); setTimeout(() => send(data.text), 60); }
-          else setStatus("could not hear - try again");
-        } catch { setStatus("mic error"); }
+          if (res.ok && data.text) { setInput(data.text); setTimeout(() => send(data.text), 60); }
+          else showToast("🎤 could not hear — try again");
+        } catch { showToast("🎤 mic error"); }
       };
       recRef.current = rec;
       rec.start();
       setRecording(true);
-      setStatus("recording...");
-    } catch { setStatus("mic blocked"); setTimeout(() => setStatus("ready"), 1500); }
+    } catch { showToast("🎤 mic blocked — allow access in the browser"); }
   };
 
   const stopRecord = () => {
@@ -585,10 +588,9 @@ export default function Home() {
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setCamOn(true); setObjects([]); setDetectPaused(false);
-      setStatus("detecting objects...");
       detectTimer.current = setInterval(detectFrame, 3000);
       detectFrame();
-    } catch { setStatus("camera blocked"); setTimeout(() => setStatus("ready"), 2000); }
+    } catch { showToast("👁 camera blocked — allow access in the browser"); }
   };
 
   const stopCamera = () => {
@@ -768,6 +770,7 @@ export default function Home() {
             <header className="topbar">
               <div className="conv-title-top">{convos.find((c) => c.id === activeConvId)?.title || "New chat"}</div>
               <div className="toggles">
+                <button className="new-chat-mobile" title="New chat" onClick={newChat}>✏️</button>
                 <button className={showMemory ? "active" : ""} onClick={() => setShowMemory(!showMemory)}>🧠<span>Memory</span></button>
                 <label className="chip"><input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} /> 🔊 Speak</label>
               </div>
@@ -795,7 +798,6 @@ export default function Home() {
                     <button className="sugg-card" onClick={() => send("Make a 2-day Ratnagiri itinerary as a PDF for my guests")}>🗺️<div><b>Itinerary (PDF)</b><em>Ready for your guests</em></div></button>
                     <button className="sugg-card" onClick={() => send("Create a monthly expense sheet for my business")}>💰<div><b>Budget sheet (Excel)</b><em>Track income & expenses</em></div></button>
                   </div>
-                  <div className="welcome-hints"><span>🎤 Talk</span><span>📷 Photo</span><span>✨ Image mode</span><span>💻 Code</span><span>⚡ Automate</span></div>
                 </div>
               )}
               {messages.map((m, i) => (                <div className={`msg ${m.role}`} key={i}>
@@ -817,6 +819,7 @@ export default function Home() {
                     {m.role === "assistant" && <ToolChips tools={m.tools} />}
                     {m.role === "assistant" && !m.image && (
                       <div className="msg-actions">
+                        <button className="icon-btn" title="Copy" onClick={() => { navigator.clipboard.writeText(m.content).then(() => showToast("📋 copied to clipboard")); }}>📋</button>
                         <button className="icon-btn" title="Speak" onClick={() => speak(m.content, m.lang || "en")}>🔊</button>
                         <button className="icon-btn" title="Remember" onClick={() => addMemory(m.content)}>🧠</button>
                       </div>
@@ -1113,12 +1116,13 @@ export default function Home() {
                 <li>📁 Bigger workspaces & longer projects</li>
                 <li>⭐ Priority support in Marathi / Hindi / English</li>
               </ul>
-              <button className="send-btn" style={{ width: "100%" }} onClick={() => { setUpgradeOpen(false); setStatus("🎉 you are on the waitlist — Pro launches soon"); }}>Join the waitlist</button>
+              <button className="send-btn" style={{ width: "100%" }} onClick={() => { setUpgradeOpen(false); showToast("🎉 you are on the waitlist — Pro launches soon"); }}>Join the waitlist</button>
               <p className="auto-note">You are on the free plan — everything you see works now. Pro launches soon.</p>
             </div>
           </div>
         </div>
       )}
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }
