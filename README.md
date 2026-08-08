@@ -45,6 +45,34 @@ All keys are stored in Vercel / Render env config (and `.env` locally — never 
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Same values, client bundle |
 | `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_ID` / `WHATSAPP_VERIFY_TOKEN` | WhatsApp Business Cloud API bot (set these to turn the bot on) |
 
+## Getting credentials (for users)
+
+The **Automate tab in the app** contains a built-in step-by-step guide for every credential below (open it with the "📘 How to get credentials" card). Summary:
+
+| Integration | What it unlocks | Where to get it |
+| --- | --- | --- |
+| GitHub token | Search repos, list/create issues from chat | https://github.com/settings/tokens → "Generate new token (classic)"; scopes: `repo` (or fine-grained with Issues/Contents Read+Write) |
+| Gmail App Password | Send emails (reports, invoices, bookings) | https://myaccount.google.com/apppasswords — requires 2-Step Verification ON; never use your normal password |
+| MCP servers | AI calls tools from other apps (DBs, Slack, Notion, Google Drive...) | https://smithery.ai — copy a server's *streamable HTTP* URL, add it in Automate → "＋ Add server" |
+| WhatsApp Cloud API | WhatsApp bot replies to guests in Marathi/Hindi/English | Meta developer account → create app → WhatsApp → API Setup; then the owner sets `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_VERIFY_TOKEN` and wires the webhook `https://your-domain/api/whatsapp` (guide: https://developers.facebook.com/docs/whatsapp/cloud-api/get-started) |
+| AI keys (Groq/Cerebras/Exa/OpenCode) | Chat, deep research, voice — **no user action**; configured server-side by the app owner | From each provider dashboard; only needed if you self-host |
+
+WhatsApp webhook details: Meta → WhatsApp → Configuration → Webhook → Callback URL `https://your-domain.com/api/whatsapp`, Verify token = the same `WHATSAPP_VERIFY_TOKEN` string you chose, and subscribe to the **messages** field.
+
+### Enabling Google sign-in (one time)
+
+The **🔵 Continue with Google** button needs a one-time owner setup (the in-app guide in Automate → "Google sign-in" mirrors these steps):
+
+1. Google Cloud console → APIs & Services → Credentials → **Create OAuth client ID** → Web application.
+2. Authorized JavaScript origins: `https://your-domain.com` (+ `http://localhost:3000` for dev).
+3. Authorized redirect URI: `https://YOUR-PROJECT.supabase.co/auth/v1/callback` (Supabase handles the handshake).
+4. Copy the Client ID + Secret into Supabase dashboard → Authentication → Sign In / Up → **Providers → Google → Enable**.
+5. Supabase → Authentication → URL Configuration: set Site URL to your domain and add `https://your-domain.com` to Redirect URLs.
+
+## SEO (Maharashtra, India)
+
+The app ships with full local SEO: `lang="en-IN"`, geo meta tags (Ratnagiri, Maharashtra), Open Graph + Twitter cards, `sitemap.xml`, robots.txt with sitemap, PWA manifest (`en-IN`), and JSON-LD `SoftwareApplication` + `Organization` (Arynox Tech, Maharashtra, India) structured data. The home page targets keywords like "Marathi AI assistant", "AI for hotels India" and "Konkan AI".
+
 ## Architecture
 
 - **Frontend + API**: Next.js 15 (App Router) — single deployable. `app/page.jsx` is the whole client UI; `app/api/*` are serverless routes.

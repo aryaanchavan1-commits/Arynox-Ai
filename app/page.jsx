@@ -75,7 +75,7 @@ export default function Home() {
   const [modelBadge, setModelBadge] = useState("");
   const [showMemory, setShowMemory] = useState(false);
   const [newFact, setNewFact] = useState("");
-  const [theme, setTheme] = useState(() => load(KEY.theme, "auto"));
+  const [theme, setTheme] = useState(() => load(KEY.theme, "light"));
   const [creds, setCreds] = useState(() => load(KEY.creds, { githubToken: "", gmailUser: "", gmailPass: "", mcpUrl: "", mcpToken: "", mcpServers: [] }));
   const [user, setUser] = useState(() => load(KEY.session, null));
   const [authOpen, setAuthOpen] = useState(false);
@@ -86,6 +86,7 @@ export default function Home() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const [business, setBusiness] = useState(() => load(KEY.business, null));
+  const [guideOpen, setGuideOpen] = useState("");
   const [mcpInfo, setMcpInfo] = useState([]);
   const [mcpBusy, setMcpBusy] = useState(false);
   const [autoLog, setAutoLog] = useState([]);
@@ -163,6 +164,17 @@ export default function Home() {
 
   const authHeaders = () => (user?.token ? { Authorization: `Bearer ${user.token}` } : {});
 
+  const friendlyAuthError = (err) => {
+    const m = String(err?.message || err || "");
+    if (m.includes("Unsupported provider")) return "Google sign-in is being set up by the app owner (Automate tab → Google guide). Use Email/Password in the meantime.";
+    if (m.includes("Invalid login credentials")) return "Wrong email or password.";
+    if (m.includes("Email not confirmed")) return "Please confirm your email first — check your inbox for the confirmation link.";
+    if (m.includes("User already registered")) return "This email is already registered — try signing in instead.";
+    if (m.includes("Redirect URL")) return "The app owner must allow this site's URL in Supabase → Auth → URL Configuration (Redirect URLs).";
+    try { const j = JSON.parse(m); if (j.msg) return j.msg; } catch {}
+    return m.slice(0, 160);
+  };
+
   const doAuth = async () => {
     const email = authEmail.trim().toLowerCase();
     const pass = authPass;
@@ -195,13 +207,14 @@ export default function Home() {
         }
       }
     } catch (err) {
-      setAuthError(err?.message || "Authentication failed. Try again.");
+      setAuthError(friendlyAuthError(err));
     } finally { setAuthBusy(false); }
   };
 
   const googleSignIn = () => {
+    setAuthError("");
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: origin } }).catch((err) => setAuthError(err?.message || "Google sign-in failed"));
+    sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: origin } }).catch((err) => setAuthError(friendlyAuthError(err)));
   };
 
   const signOut = async () => {
@@ -683,7 +696,14 @@ export default function Home() {
                 <div className="welcome">
                   <div className="welcome-logo">✦</div>
                   <div className="welcome-title">Arynox AI</div>
-                  <div className="welcome-sub">Your AI in English, हिन्दी and मराठी<br />I detect what you need — code, images, research, office files — and just do it</div>
+                  <div className="welcome-tag">Your premium AI concierge — English, हिन्दी, मराठी</div>
+                  <div className="welcome-sub">I detect what you need — code, images, research, office files — and just do it</div>
+                  <div className="welcome-trust">⭐ Loved in Maharashtra 🇮🇳 · Built by Arynox Tech, Konkan</div>
+                  <div className="welcome-steps">
+                    <div className="welcome-step"><em>1.</em><span>Sign in to save your work</span></div>
+                    <div className="welcome-step"><em>2.</em><span>Ask in your language</span></div>
+                    <div className="welcome-step"><em>3.</em><span>Automate what you do daily</span></div>
+                  </div>
                   <div className="sugg-grid">
                     <button className="sugg-card" onClick={() => send("Build a calculator app in Python")}><span>🧮</span><div><b>Calculator app</b><em>Python project, run & verify</em></div></button>
                     <button className="sugg-card" onClick={() => send("Create a monthly budget in Excel")}><span>📊</span><div><b>Excel budget</b><em>Spreadsheet, ready to download</em></div></button>
@@ -843,6 +863,15 @@ export default function Home() {
               <div className="brand"><span className="dot" /><span className="status">Automations — connect your accounts & run actions</span></div>
             </header>
             <div className="auto-body">
+              <div className="auto-card guide-card">
+                <div className="guide-card-head">
+                  <span>📘 How to get credentials — step by step</span>
+                  <button className="chip" onClick={() => setGuideOpen(guideOpen ? "" : "github")}>{guideOpen ? "Collapse" : "Open guides"}</button>
+                </div>
+                <div className="guide-list">
+                  {CRED_GUIDES.map((g) => <CredGuide key={g.id} id={g.id} open={guideOpen} onToggle={setGuideOpen} />)}
+                </div>
+              </div>
               <div className="auto-cols">
                 <div className="auto-col">
                   <div className="auto-card">
@@ -853,6 +882,7 @@ export default function Home() {
                       <button className="chip" disabled={autoRunning !== ""} onClick={() => runAutomation("github_search", { query: "arynox" })}>🔎 Test search</button>
                       <button className="chip" disabled={autoRunning !== ""} onClick={() => runAutomation("github_search", { query: prompt("Search GitHub for:", "react") || "react" })}>Search repos</button>
                       <button className="chip" disabled={autoRunning !== ""} onClick={() => { const repo = prompt("Repo (owner/name):", "vercel/next.js"); if (repo) runAutomation("github_issues", { repo }); }}>Open issues</button>
+                      <button className="chip" onClick={() => setGuideOpen("github")}>❓ How to get a token</button>
                     </div>
                   </div>
                   <div className="auto-card">
@@ -861,6 +891,7 @@ export default function Home() {
                     <input className="auto-input" type="password" placeholder="App Password (Google > App passwords)" value={creds.gmailPass} onChange={(e) => setCred("gmailPass", e.target.value)} />
                     <div className="auto-actions">
                       <button className="chip" disabled={autoRunning !== ""} onClick={() => { const to = prompt("Send to:", creds.gmailUser); if (to) runAutomation("gmail_send", { to, subject: "Test from Arynox AI", body: "Hello! This is a test email sent by Arynox AI. 🚀" }); }}>✉️ Send test email</button>
+                      <button className="chip" onClick={() => setGuideOpen("gmail")}>❓ How to get an app password</button>
                     </div>
                     <p className="auto-note">Use a Gmail App Password (not your normal password). Enable 2-Step Verification first.</p>
                   </div>
@@ -889,6 +920,7 @@ export default function Home() {
                       <button className="chip" disabled={mcpBusy} onClick={refreshMcp}>{mcpBusy ? "Discovering..." : "🔍 Discover tools"}</button>
                       <button className="chip" disabled={mcpBusy} onClick={addMcpServer}>＋ Add server</button>
                       <button className="chip" disabled={mcpBusy} onClick={() => { const tool = prompt("MCP tool name:"); const server = prompt("Server name (or leave blank for first):") || ""; if (tool) runAutomation("mcp_call", { server, tool, params: {} }); }}>🔌 Call MCP tool</button>
+                      <button className="chip" onClick={() => setGuideOpen("mcp")}>❓ How to add a server</button>
                     </div>
                     {mcpInfo.filter((s) => !s.error).length > 0 && (
                       <div className="mcp-tools">
@@ -923,6 +955,14 @@ export default function Home() {
                     {!user && (
                       <p className="auto-note">🔒 Save this to your account so it follows you: <button className="chip" onClick={() => setAuthOpen(true)}>Sign in</button></p>
                     )}
+                  </div>
+                  <div className="auto-card">
+                    <div className="auto-card-title">💬 WhatsApp bot</div>
+                    <p className="auto-note">Guests message your WhatsApp number and the AI answers in Marathi, Hindi or English — booking requests, timings, prices, nearby places.</p>
+                    <div className="auto-actions">
+                      <button className="chip" onClick={() => setGuideOpen("whatsapp")}>❓ How to get the WhatsApp API</button>
+                    </div>
+                    <p className="auto-note">The bot is enabled by the app owner (3 server variables: WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, WHATSAPP_VERIFY_TOKEN — see the guide for the full Meta setup).</p>
                   </div>
                   <div className="auto-card">
                     <div className="auto-card-title">💬 Just ask in chat</div>
@@ -979,6 +1019,123 @@ export default function Home() {
 }
 
 function hour() { return new Date().getHours(); }
+
+const CRED_GUIDES = [
+  {
+    id: "google",
+    icon: "🔵",
+    title: "Google sign-in (one-time setup)",
+    what: "Lets every visitor log in with one click instead of typing a password. Only the app owner does this once.",
+    steps: [
+      "Create a Google Cloud project + OAuth client (console.cloud.google.com → APIs & Services → Credentials → Create OAuth client ID → Web application).",
+      "Authorized JavaScript origins: https://your-domain.com (and http://localhost:3000 while developing).",
+      "Authorized redirect URI: https://offnevsupwnwqnhtexed.supabase.co/auth/v1/callback (Supabase handles the Google handshake).",
+      "Copy the Client ID and Client Secret from Google Cloud.",
+      "Supabase dashboard → Authentication → Sign In / Up → Providers → Google → Enable, paste Client ID + Secret, Save.",
+      "Also set the app URL in Supabase → Authentication → URL Configuration → Site URL and add https://your-domain.com to Redirect URLs.",
+      "Done — the 🔵 Continue with Google button in Sign in now works for everyone.",
+    ],
+    link: { label: "Google Cloud console", url: "https://console.cloud.google.com/apis/credentials" },
+  },
+  {
+    id: "github",
+    icon: "🐙",
+    title: "GitHub token",
+    what: "Unlocks: search repos, list & create issues, and let the AI work on your repositories.",
+    steps: [
+      "Sign in to GitHub and open https://github.com/settings/tokens (Settings → Developer settings → Personal access tokens).",
+      "Click Generate new token → Generate new token (classic).",
+      "Name it e.g. \"Arynox AI\" and set an expiry.",
+      "Tick the scopes: repo (full access) — or for fine-grained: Repository access → All repositories, then Permissions → Issues: Read and write, Contents: Read and write.",
+      "Click Generate token. Copy it immediately — GitHub shows it only once.",
+      "Paste it in the GitHub field below, then press 🔎 Test search to confirm.",
+    ],
+    link: { label: "Open token page", url: "https://github.com/settings/tokens" },
+  },
+  {
+    id: "gmail",
+    icon: "✉️",
+    title: "Gmail App Password",
+    what: "Unlocks: sending emails from chat (reports, invoices, booking forms, summaries).",
+    steps: [
+      "Your Google account must have 2-Step Verification ON: https://myaccount.google.com/security",
+      "Open https://myaccount.google.com/apppasswords (Google Account → Security → 2-Step Verification → App passwords).",
+      "Under \"App passwords\", choose Mail → Other (Custom name) → type \"Arynox\" → Generate.",
+      "Copy the 16-character password shown (spaces are fine, e.g. abcd efgh ijkl mnop).",
+      "Enter your full Gmail address and this app password in the Gmail fields below.",
+      "Press ✉️ Send test email to confirm. Never use your normal password here.",
+    ],
+    link: { label: "Create an app password", url: "https://myaccount.google.com/apppasswords" },
+  },
+  {
+    id: "mcp",
+    icon: "🔌",
+    title: "MCP server (extra apps)",
+    what: "Unlocks: the AI can call tools from other apps — databases, Slack, Notion, GitHub, Google Drive and more.",
+    steps: [
+      "MCP servers are hosted services with a \"streamable HTTP\" URL that the AI calls directly.",
+      "Easiest way: browse ready-made servers on Smithery: https://smithery.ai (free tier available).",
+      "Pick a server (e.g. GitHub, Fetch, Filesystem, Google Drive, Notion, PostgreSQL) and copy its streamable HTTP endpoint URL.",
+      "Back in this app: press ＋ Add server, enter a name and the URL (add a token too if the server asks for one).",
+      "Press 🔍 Discover tools — the server's tools appear here and the AI can call them from chat automatically.",
+      "No server running? Advanced: any local MCP server can be exposed with the MCP SDK's StreamableHTTP transport (see README).",
+    ],
+    link: { label: "Browse MCP servers", url: "https://smithery.ai" },
+  },
+  {
+    id: "whatsapp",
+    icon: "💬",
+    title: "WhatsApp Business Cloud API",
+    what: "Unlocks: the WhatsApp bot — guests can message your business number and the AI replies in Marathi/Hindi/English.",
+    steps: [
+      "Create a free Meta developer account: https://developers.facebook.com",
+      "Create an app → Add product → WhatsApp → open API Setup.",
+      "You get: an Access Token and a Phone Number ID (and a free test number to start).",
+      "Invent a random \"verify token\" string (any text, e.g. arynox12345) — you will paste it in two places.",
+      "The app owner sets 3 variables on the server (see README → Environment variables): WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, WHATSAPP_VERIFY_TOKEN.",
+      "In Meta: WhatsApp → Configuration → Webhook: set Callback URL to https://your-domain.com/api/whatsapp and the Verify token from step 4, then Subscribe to the \"messages\" field.",
+      "Save, then send any message to your WhatsApp number — the bot answers within seconds.",
+    ],
+    link: { label: "WhatsApp API setup", url: "https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" },
+  },
+  {
+    id: "keys",
+    icon: "🔑",
+    title: "AI model & research keys",
+    what: "Everything else (chat models, web research, voice) already works — these keys are configured by the app owner and are never needed from you.",
+    steps: [
+      "Chat models: Cerebras, Groq, and a free fallback tier are configured server-side — you need nothing.",
+      "Deep research (Exa) is server-side too — just ask in chat.",
+      "Image generation uses a free service — no key, works out of the box.",
+      "If you self-host the app, copy .env.example → .env and fill: GROQ_API_KEY, CEREBRAS_API_KEY, EXA_API_KEY, OPENCODE_API_KEY, Supabase and WhatsApp vars (see README).",
+    ],
+    link: { label: "App setup docs", url: "https://github.com/aryaanchavan1-commits/Arynox-Ai#readme" },
+  },
+];
+
+function CredGuide({ id, open, onToggle }) {
+  const g = CRED_GUIDES.find((x) => x.id === id);
+  if (!g) return null;
+  const isOpen = open === id;
+  return (
+    <div className={`guide-item ${isOpen ? "open" : ""}`}>
+      <button className="guide-head" onClick={() => onToggle(isOpen ? "" : id)}>
+        <span className="guide-icon">{g.icon}</span>
+        <span className="guide-title">{g.title}</span>
+        <span className="guide-what">{g.what}</span>
+        <span className="guide-caret">{isOpen ? "−" : "+"}</span>
+      </button>
+      {isOpen && (
+        <div className="guide-body">
+          <ol className="guide-steps">
+            {g.steps.map((s, i) => <li key={i}>{s}</li>)}
+          </ol>
+          {g.link && <a className="chip guide-link" href={g.link.url} target="_blank" rel="noreferrer">↗ {g.link.label}</a>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function webmToWav(blob) {
   return new Promise(async (resolve, reject) => {
