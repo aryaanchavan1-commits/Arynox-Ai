@@ -9,7 +9,7 @@ import JSZip from "jszip";
 import { classify } from "@/lib/intent";
 import { sb } from "@/lib/supabase-client";
 
-const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business" };
+const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos" };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
@@ -64,6 +64,9 @@ const OBJECT_ICONS = {
 export default function Home() {
   const [tab, setTab] = useState("chat");
   const [messages, setMessages] = useState([]);
+  const [convos, setConvos] = useState(() => load(KEY.convos, []));
+  const [activeConvId, setActiveConvId] = useState(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [memory, setMemory] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -228,7 +231,43 @@ export default function Home() {
 
   const persist = (msgs) => {
     setMessages(msgs);
-    save(KEY.history, msgs.slice(-40).map((m) => ({ role: m.role, content: m.content, lang: m.lang, image: m.image, files: m.files, tools: m.tools, codeFiles: m.codeFiles })));
+    const slim = msgs.slice(-40).map((m) => ({ role: m.role, content: m.content, lang: m.lang, image: m.image, files: m.files, tools: m.tools, codeFiles: m.codeFiles }));
+    save(KEY.history, slim);
+    if (msgs.length) {
+      const id = activeConvId || String(Date.now());
+      if (!activeConvId) setActiveConvId(id);
+      save(`arynox_conv_${id}`, slim);
+      const first = msgs.find((m) => m.role === "user")?.content || "Chat";
+      const title = first.length > 40 ? first.slice(0, 40) + "…" : first;
+      setConvos((prev) => {
+        const next = [{ id, title, ts: Date.now() }, ...prev.filter((c) => c.id !== id)].slice(0, 30);
+        save(KEY.convos, next);
+        return next;
+      });
+    }
+  };
+
+  const newChat = () => {
+    if (busy) return;
+    setMessages([]);
+    save(KEY.history, []);
+    setActiveConvId(null);
+    setStatus("ready");
+  };
+
+  const openConvo = (id) => {
+    if (busy) return;
+    const msgs = load(`arynox_conv_${id}`, []);
+    setMessages(msgs);
+    save(KEY.history, msgs);
+    setActiveConvId(id);
+    setTab("chat");
+  };
+
+  const deleteConvo = (id) => {
+    setConvos((prev) => { const next = prev.filter((c) => c.id !== id); save(KEY.convos, next); return next; });
+    try { localStorage.removeItem(`arynox_conv_${id}`); } catch {}
+    if (id === activeConvId) { setMessages([]); save(KEY.history, []); setActiveConvId(null); }
   };
 
   const setCred = (k, v) => setCreds((prev) => { const next = { ...prev, [k]: v }; save(KEY.creds, next); return next; });
@@ -637,7 +676,19 @@ export default function Home() {
   return (
     <div className="app">
       <nav className="rail">
-        <div className="rail-brand">✦<span>Arynox AI</span></div>
+        <div className="rail-head">
+          <div className="rail-brand">✦<span>Arynox AI</span></div>
+          <button className="new-chat-btn" onClick={newChat} title="Start a new chat">✏️<span>New chat</span></button>
+        </div>
+        <div className="rail-convos">
+          {convos.length > 0 && <div className="rail-sec-label">Recent</div>}
+          {convos.map((c) => (
+            <div className={`conv-row ${c.id === activeConvId ? "active" : ""}`} key={c.id} onClick={() => openConvo(c.id)} title={c.title}>
+              <span className="conv-title">💬 {c.title}</span>
+              <button className="conv-del" title="Delete chat" onClick={(e) => { e.stopPropagation(); deleteConvo(c.id); }}>🗑</button>
+            </div>
+          ))}
+        </div>
         <div className="rail-nav">
           <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}>💬<span>Chat</span></button>
           <button className={tab === "ide" ? "active" : ""} onClick={() => setTab("ide")}>💻<span>IDE</span></button>
@@ -645,10 +696,10 @@ export default function Home() {
           <button className={tab === "auto" ? "active" : ""} onClick={() => setTab("auto")}>⚡<span>Automate</span></button>
         </div>
         <div className="rail-foot">
-          <button className={showMemory ? "active" : ""} onClick={() => setShowMemory(!showMemory)}>🧠<span>Memory</span></button>
           <button onClick={() => { const next = theme === "light" ? "dark" : theme === "dark" ? "auto" : "light"; setTheme(next); save(KEY.theme, next); }} title="Theme (auto = day/night)">
             {effectiveTheme === "dark" ? "🌙" : "☀️"}<span>{theme === "auto" ? "Auto (day/night)" : effectiveTheme === "dark" ? "Dark" : "Light"}</span>
           </button>
+          <button className="upgrade-btn" onClick={() => setUpgradeOpen(true)}>💎<span>Upgrade</span></button>
           {user ? (
             <button className="user-chip" onClick={signOut} title="Signed in - click to sign out">
               <span className="user-avatar">{(user.name || "U")[0].toUpperCase()}</span>
@@ -683,11 +734,10 @@ export default function Home() {
         {tab === "chat" && (
           <>
             <header className="topbar">
-              <div className="brand"><span className={`dot ${busy || recording ? "busy" : ""}`} /><span className="status">{recording ? "listening..." : busy ? BUSY_STEPS[busyStep] : status}</span></div>
+              <div className="conv-title-top">{convos.find((c) => c.id === activeConvId)?.title || "New chat"}</div>
               <div className="toggles">
+                <button className={showMemory ? "active" : ""} onClick={() => setShowMemory(!showMemory)}>🧠<span>Memory</span></button>
                 <label className="chip"><input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} /> 🔊 Speak</label>
-                <label className={`chip ${genMode ? "on" : ""}`}><input type="checkbox" checked={genMode} onChange={(e) => setGenMode(e.target.checked)} /> ✨ Image mode</label>
-                <button className="chip" title="Clear chat" onClick={() => { setMessages([]); save(KEY.history, []); }}>🗑 New chat</button>
               </div>
             </header>
 
@@ -695,15 +745,9 @@ export default function Home() {
               {messages.length === 0 && (
                 <div className="welcome">
                   <div className="welcome-logo">✦</div>
-                  <div className="welcome-title">Arynox AI</div>
-                  <div className="welcome-tag">Your premium AI concierge — English, हिन्दी, मराठी</div>
-                  <div className="welcome-sub">I detect what you need — code, images, research, office files — and just do it</div>
+                  <div className="welcome-title">What can I help with?</div>
+                  <div className="welcome-tag">Arynox AI speaks English, हिन्दी and मराठी — and just does what you need</div>
                   <div className="welcome-trust">⭐ Loved in Maharashtra 🇮🇳 · Built by Arynox Tech, Konkan</div>
-                  <div className="welcome-steps">
-                    <div className="welcome-step"><em>1.</em><span>Sign in to save your work</span></div>
-                    <div className="welcome-step"><em>2.</em><span>Ask in your language</span></div>
-                    <div className="welcome-step"><em>3.</em><span>Automate what you do daily</span></div>
-                  </div>
                   <div className="sugg-grid">
                     <button className="sugg-card" onClick={() => send("Build a calculator app in Python")}><span>🧮</span><div><b>Calculator app</b><em>Python project, run & verify</em></div></button>
                     <button className="sugg-card" onClick={() => send("Create a monthly budget in Excel")}><span>📊</span><div><b>Excel budget</b><em>Spreadsheet, ready to download</em></div></button>
@@ -722,8 +766,7 @@ export default function Home() {
                   <div className="welcome-hints"><span>🎤 Talk</span><span>📷 Photo</span><span>✨ Image mode</span><span>💻 Code</span><span>⚡ Automate</span></div>
                 </div>
               )}
-              {messages.map((m, i) => (
-                <div className={`msg ${m.role}`} key={i}>
+              {messages.map((m, i) => (                <div className={`msg ${m.role}`} key={i}>
                   {m.role === "assistant" && <div className="avatar">✦</div>}
                   <div className="msg-body">
                     {m.image && m.role === "user" ? <img className="attached" src={m.image} alt="attached" /> : null}
@@ -760,17 +803,24 @@ export default function Home() {
                   <button className="icon-btn" onClick={() => setImage(null)}>✕</button>
                 </div>
               )}
-              <div className="input-row">
-                <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPickImage} />
-                <input ref={officeRef} type="file" accept=".xlsx,.csv,.txt,.docx,.pdf" hidden onChange={onPickOfficeFile} />
-                <button className="tool-btn" title="Attach a photo" onClick={() => fileRef.current?.click()}>📷</button>
-                <button className="tool-btn" title="Attach Excel/CSV/Word/PDF file" onClick={() => officeRef.current?.click()}>📎</button>
-                <textarea rows={1} placeholder={genMode ? "Describe the image you want..." : "Message Arynox AI..."}
-                  value={input} onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} />
-                <button className={`tool-btn mic ${recording ? "rec" : ""}`} title={recording ? "Stop" : "Talk"} onClick={recording ? stopRecord : startRecord}>{recording ? "◼" : "🎤"}</button>
-                <button className="send-btn" disabled={!input.trim() || busy} onClick={() => send()}>➤</button>
+              <div className="composer-box">
+                <div className="input-row">
+                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPickImage} />
+                  <input ref={officeRef} type="file" accept=".xlsx,.csv,.txt,.docx,.pdf" hidden onChange={onPickOfficeFile} />
+                  <button className="tool-btn" title="Attach a photo" onClick={() => fileRef.current?.click()}>📷</button>
+                  <button className="tool-btn" title="Attach Excel/CSV/Word/PDF file" onClick={() => officeRef.current?.click()}>📎</button>
+                  <textarea rows={1} placeholder={genMode ? "Describe the image you want..." : "Ask anything — in English, हिन्दी or मराठी"}
+                    value={input} onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} />
+                  <button className={`tool-btn mic ${recording ? "rec" : ""}`} title={recording ? "Stop" : "Talk"} onClick={recording ? stopRecord : startRecord}>{recording ? "◼" : "🎤"}</button>
+                  <button className="send-btn" disabled={!input.trim() || busy} onClick={() => send()}>➤</button>
+                </div>
+                <div className="composer-foot">
+                  <button className={`chip ${genMode ? "on" : ""}`} onClick={() => setGenMode(!genMode)}>✨ {genMode ? "Image mode on" : "Image mode"}</button>
+                  <span className="composer-hint">{recording ? "listening..." : busy ? BUSY_STEPS[busyStep] : "Enter to send · Shift+Enter for a new line"}</span>
+                </div>
               </div>
+              <p className="composer-disclaimer">Arynox can make mistakes. Check important info.</p>
             </div>
           </>
         )}
@@ -1011,6 +1061,29 @@ export default function Home() {
                 <p className="auto-note">Your workspace, files and business profile are saved to your account — sign in on any device to continue.</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {upgradeOpen && (
+        <div className="modal" onClick={() => setUpgradeOpen(false)}>
+          <div className="auth-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="auth-head">
+              <span>💎 Arynox Pro</span>
+              <button className="icon-btn" onClick={() => setUpgradeOpen(false)}>✕</button>
+            </div>
+            <div className="auth-body">
+              <div className="plan-price">₹299<span>/month</span></div>
+              <ul className="plan-features">
+                <li>⚡ Faster models with unlimited deep research</li>
+                <li>💬 WhatsApp bot for your own business number</li>
+                <li>🏨 Concierge mode with booking & invoice flows</li>
+                <li>📁 Bigger workspaces & longer projects</li>
+                <li>⭐ Priority support in Marathi / Hindi / English</li>
+              </ul>
+              <button className="send-btn" style={{ width: "100%" }} onClick={() => { setUpgradeOpen(false); setStatus("🎉 you are on the waitlist — Pro launches soon"); }}>Join the waitlist</button>
+              <p className="auto-note">You are on the free plan — everything you see works now. Pro launches soon.</p>
+            </div>
           </div>
         </div>
       )}
