@@ -18,7 +18,8 @@ A production-ready, trilingual AI assistant web app — built by **Arynox Tech**
 - **🧠 Long-term memory** — facts auto-extracted from conversation, stored in the browser.
 - **🤖 Auto model routing** — quota-aware chain: Cerebras `gpt-oss-120b` → `zai-glm-4.7` → Groq `llama-3.3-70b-versatile` → `llama-3.1-8b-instant` → OpenCode free models (`laguna-s-2.1-free`, `nemotron-3-ultra-free`, `longcat-2.0-free`). Vision & STT use Groq qwen / whisper.
 - **⏰ 24/7 keep-alive** — GitHub Actions pings the backend every 10 minutes (`keepalive.yml`) so Render free never sleeps; the app also self-pings while open.
-- **🌗 Day/night themes** — auto-switches at 06:00 / 18:00, or manual light/dark; fully responsive mobile layout (bottom nav rail), installable as a PWA (manifest).
+- **📲 Installable app** — real PWA: PNG icons (192/512 + maskable), service worker with offline shell, `display_override`, iOS apple-touch-icon + `appleWebApp` meta. Tap **Install** in the sidebar (or the browser's install icon) to open it as a standalone app on phones and laptops — no app store needed.
+- **🌗 Day/night themes** — auto-switches at 06:00 / 18:00, or manual light/dark; fully responsive mobile layout (bottom nav rail).
 - **🔐 Accounts** — sign in / sign up with email + password or Google (Supabase Auth). Per-user workspaces: every user's files are isolated server-side; guests share a private temp workspace.
 - **🏨 Concierge mode** — business owners (hotels, resorts, restaurants) fill a small profile in the Automate tab and the AI becomes their guest assistant: Marathi/Hindi/English replies, booking request forms (`bookings.xlsx`), invoices, budgets and PDF itineraries.
 - **💬 WhatsApp bot** — webhook endpoint (`/api/whatsapp`) that answers in the user's language; enable by setting the three WhatsApp env vars below.

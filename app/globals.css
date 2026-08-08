@@ -119,6 +119,7 @@ html, body {
   box-shadow: 0 4px 14px var(--shadow);
 }
 .upgrade-btn:hover { transform: translateY(-1px); }
+.install-btn { color: var(--accent1) !important; }
 .rail-nav, .rail-foot { display: flex; flex-direction: column; gap: 4px; }
 .rail-nav button, .rail-foot button {
   display: flex; align-items: center; gap: 12px; padding: 11px 14px;

@@ -67,6 +67,8 @@ export default function Home() {
   const [convos, setConvos] = useState(() => load(KEY.convos, []));
   const [activeConvId, setActiveConvId] = useState(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [deferredInstall, setDeferredInstall] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
   const [memory, setMemory] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -144,6 +146,33 @@ export default function Home() {
     return () => clearInterval(iv);
   }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPrompt = (e) => { e.preventDefault(); setDeferredInstall(e); };
+    const onInstalled = () => { setDeferredInstall(null); setIsInstalled(true); setStatus("✅ app installed — find Arynox AI in your apps"); };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    if (window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone) setIsInstalled(true);
+    return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
+  }, []);
+
+  const installApp = async () => {
+    if (deferredInstall) {
+      deferredInstall.prompt();
+      try { await deferredInstall.userChoice; } catch {}
+      setDeferredInstall(null);
+    } else if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+      setStatus("📲 iPhone/iPad: tap the Share button → Add to Home Screen");
+    } else {
+      setStatus("📲 install: Chrome/Edge menu → Install Arynox AI (or the install icon in the address bar)");
+    }
+  };
+
   useEffect(() => () => { stopCamera(); }, []);
 
   useEffect(() => {
@@ -699,6 +728,9 @@ export default function Home() {
           <button onClick={() => { const next = theme === "light" ? "dark" : theme === "dark" ? "auto" : "light"; setTheme(next); save(KEY.theme, next); }} title="Theme (auto = day/night)">
             {effectiveTheme === "dark" ? "🌙" : "☀️"}<span>{theme === "auto" ? "Auto (day/night)" : effectiveTheme === "dark" ? "Dark" : "Light"}</span>
           </button>
+          {!isInstalled && (
+            <button className="install-btn" onClick={installApp} title="Install Arynox AI as an app">📲<span>Install</span></button>
+          )}
           <button className="upgrade-btn" onClick={() => setUpgradeOpen(true)}>💎<span>Upgrade</span></button>
           {user ? (
             <button className="user-chip" onClick={signOut} title="Signed in - click to sign out">

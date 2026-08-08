@@ -41,7 +41,14 @@ export const metadata = {
     follow: true,
     googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
   },
-  icons: { icon: "/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+  },
   other: {
     "geo.region": "IN-MH",
     "geo.placename": "Ratnagiri, Maharashtra, India",
@@ -55,6 +62,7 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: "#f6f3ee",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Arynox AI" },
 };
 
 const jsonLd = {
