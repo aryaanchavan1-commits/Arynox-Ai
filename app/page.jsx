@@ -77,7 +77,7 @@ export default function Home() {
   const [genMode, setGenMode] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [toast, setToast] = useState("");
-  const [modelBadge, setModelBadge] = useState("");
+
   const [showMemory, setShowMemory] = useState(false);
   const [newFact, setNewFact] = useState("");
   const [theme, setTheme] = useState(() => load(KEY.theme, "light"));
@@ -110,6 +110,9 @@ export default function Home() {
   const [runOut, setRunOut] = useState("");
   const [running, setRunning] = useState(false);
   const [newFileName, setNewFileName] = useState("");
+  const [idePreview, setIdePreview] = useState(false);
+  const previewUrl = () => `/api/preview${user?.token ? "?t=" + encodeURIComponent(user.token) : ""}`;
+  const hasHtml = project.some((f) => /\.html?$/i.test(f.name));
 
   const [camOn, setCamOn] = useState(false);
   const [objects, setObjects] = useState([]);
@@ -128,6 +131,7 @@ export default function Home() {
   const streamRef = useRef(null);
   const detectTimer = useRef(null);
   const toastTimer = useRef(null);
+  const abortRef = useRef(null);
 
   const showToast = (t) => {
     setToast(t);
@@ -468,6 +472,9 @@ export default function Home() {
     }
 
     try {
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      const timer = setTimeout(() => ctrl.abort(), 180000);
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -478,8 +485,9 @@ export default function Home() {
           creds,
           business,
         }),
-        signal: AbortSignal.timeout(180000),
+        signal: ctrl.signal,
       });
+      clearTimeout(timer);
       const data = await res.json();
       if (!res.ok) {
         persist([...history, { role: "assistant", content: data.error || "Something went wrong.", lang: "en" }]);
@@ -491,7 +499,6 @@ export default function Home() {
       if (Array.isArray(data.memory) && data.memory.length) {
         setMemory((prev) => { const next = [...prev]; for (const f of data.memory) if (!next.includes(f)) next.push(f); save(KEY.memory, next); return next; });
       }
-      setModelBadge(data.model ? `${data.provider || ""} · ${data.model}` : "");
       if (data.codeFiles?.length) {
         setProject((prev) => {
           const names = new Set(prev.map((f) => f.name));
@@ -514,12 +521,20 @@ export default function Home() {
           save(KEY.project, next);
           return next;
         });
+        if (Array.isArray(data.tools) && data.tools.some((t) => /write_file|edit_file|delete_file|run_code/.test(t))) {
+          setTab("ide");
+          setIdePreview(true);
+          showToast("🛠 built in the IDE — files + live preview ready");
+        }
       }
       if (autoSpeak && !data.codeFiles?.length && !data.files?.length) speak(data.reply, data.lang || "en");
     } catch (err) {
-      persist([...history, { role: "assistant", content: "Network error: " + err.message, lang: "en" }]);
-    } finally { setBusy(false); }
+      if (err?.name === "AbortError") persist([...history, { role: "assistant", content: "⏹ stopped — send your next message to continue", lang: "en" }]);
+      else persist([...history, { role: "assistant", content: "Network error: " + err.message, lang: "en" }]);
+    } finally { setBusy(false); abortRef.current = null; }
   };
+
+  const stopGeneration = () => abortRef.current?.abort();
 
   const onPickImage = (e) => {
     const file = e.target.files?.[0];
@@ -675,6 +690,11 @@ export default function Home() {
     } catch {}
   };
 
+  const exportChat = () => {
+    const md = messages.map((m) => `## ${m.role === "user" ? "You" : "Arynox AI"}\n${m.content}\n`).join("\n");
+    download("arynox-chat.md", new Blob([md], { type: "text/markdown;charset=utf-8" }), "text/markdown");
+  };
+
   const addMcpServer = () => {
     const name = prompt("MCP server name (e.g. my-github):");
     if (!name) return;
@@ -742,7 +762,6 @@ export default function Home() {
           ) : (
             <button className="signin-btn" onClick={() => { setAuthOpen(true); setAuthError(""); }}>👤<span>Sign in</span></button>
           )}
-          {modelBadge && <div className="model-badge">{modelBadge}</div>}
         </div>
       </nav>
 
@@ -769,11 +788,14 @@ export default function Home() {
           <>
             <header className="topbar">
               <div className="conv-title-top">{convos.find((c) => c.id === activeConvId)?.title || "New chat"}</div>
-              <div className="toggles">
-                <button className="new-chat-mobile" title="New chat" onClick={newChat}>✏️</button>
-                <button className={showMemory ? "active" : ""} onClick={() => setShowMemory(!showMemory)}>🧠<span>Memory</span></button>
-                <label className="chip"><input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} /> 🔊 Speak</label>
-              </div>
+              {messages.length > 0 && (
+                <div className="toggles">
+                  <button className="new-chat-mobile" title="New chat" onClick={newChat}>✏️</button>
+                  <button className="icon-btn" title="Download chat" onClick={exportChat}>📥</button>
+                  <button className={showMemory ? "active" : ""} onClick={() => setShowMemory(!showMemory)}>🧠<span>Memory</span></button>
+                  <label className="chip"><input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} /> 🔊 Speak</label>
+                </div>
+              )}
             </header>
 
             <div className="chat">
@@ -846,13 +868,14 @@ export default function Home() {
                   <button className="tool-btn" title="Attach Excel/CSV/Word/PDF file" onClick={() => officeRef.current?.click()}>📎</button>
                   <textarea rows={1} placeholder={genMode ? "Describe the image you want..." : "Ask anything — in English, हिन्दी or मराठी"}
                     value={input} onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} />
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
                   <button className={`tool-btn mic ${recording ? "rec" : ""}`} title={recording ? "Stop" : "Talk"} onClick={recording ? stopRecord : startRecord}>{recording ? "◼" : "🎤"}</button>
                   <button className="send-btn" disabled={!input.trim() || busy} onClick={() => send()}>➤</button>
                 </div>
                 <div className="composer-foot">
                   <button className={`chip ${genMode ? "on" : ""}`} onClick={() => setGenMode(!genMode)}>✨ {genMode ? "Image mode on" : "Image mode"}</button>
                   <span className="composer-hint">{recording ? "listening..." : busy ? BUSY_STEPS[busyStep] : "Enter to send · Shift+Enter for a new line"}</span>
+                  {busy && <button className="stop-btn" onClick={stopGeneration} title="Stop the agent">■ Stop</button>}
                 </div>
               </div>
               <p className="composer-disclaimer">Arynox can make mistakes. Check important info.</p>
@@ -867,6 +890,7 @@ export default function Home() {
               <div className="ide-bar">
                 <input ref={projectRef} type="file" webkitdirectory="" multiple hidden onChange={uploadProject} />
                 <button className="chip" title="Upload an entire project folder - the AI works on it" onClick={() => projectRef.current?.click()}>📁 Upload project</button>
+                <button className={`chip ${idePreview ? "on" : ""}`} onClick={() => setIdePreview(!idePreview)} title="Preview the website live">🌐 Preview</button>
                 <input className="file-name" placeholder="new-file.js" value={newFileName} onChange={(e) => setNewFileName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addFile(); }} />
                 <button className="chip" onClick={addFile}>＋ File</button>
                 <button className="chip" onClick={() => { setRunOut(""); }}>⌫ Clear</button>
@@ -899,6 +923,16 @@ export default function Home() {
                 <pre className="console-body">{runOut || "// Press ▶ Run project to see the output here."}</pre>
               </div>
             </div>
+            {idePreview && (
+              <div className="ide-preview">
+                <div className="ide-preview-head">{hasHtml ? "🌐 Live preview — this is how your website looks" : "🌐 Live preview"}</div>
+                {hasHtml ? (
+                  <iframe src={previewUrl()} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" title="Website preview" />
+                ) : (
+                  <div className="preview-empty">No HTML website in this project yet. Ask Arynox to build one (e.g. "build a website") or add an index.html file — it will render right here.</div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
