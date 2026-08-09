@@ -217,6 +217,7 @@ export default function Home() {
     if (m.includes("Invalid login credentials")) return "Wrong email or password.";
     if (m.includes("Email not confirmed")) return "Please confirm your email first — check your inbox for the confirmation link.";
     if (m.includes("User already registered")) return "This email is already registered — try signing in instead.";
+    if (m.includes("rate limit")) return "Too many sign-ups on this project recently. Please wait about an hour, then try again — or use Google sign-in, which is instant.";
     if (m.includes("Redirect URL")) return "The app owner must allow this site's URL in Supabase → Auth → URL Configuration (Redirect URLs).";
     try { const j = JSON.parse(m); if (j.msg) return j.msg; } catch {}
     return m.slice(0, 160);
