@@ -14,6 +14,8 @@ export async function POST(req) {
     if (!result.text) return Response.json({ error: "could not hear anything" }, { status: 400 });
     return Response.json(result);
   } catch (err) {
-    return Response.json({ error: String(err?.message || err).slice(0, 300) }, { status: 500 });
+    const msg = String(err?.message || err).slice(0, 300);
+    const status = /STT failed: 4\d\d|invalid_request/i.test(msg) ? 400 : 500;
+    return Response.json({ error: msg }, { status });
   }
 }
