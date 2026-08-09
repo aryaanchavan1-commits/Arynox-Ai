@@ -82,6 +82,7 @@ export default function Landing() {
         </section>
 
         <section className="landing-section" id="features">
+          <span className="landing-overline">Features</span>
           <h2>Everything, in one place</h2>
           <p className="landing-section-sub">Stop juggling apps — one AI does the work.</p>
           <div className="landing-grid">
@@ -96,6 +97,7 @@ export default function Landing() {
         </section>
 
         <section className="landing-section landing-alt" id="how">
+          <span className="landing-overline">How it works</span>
           <h2>Three steps to done</h2>
           <div className="landing-steps">
             {STEPS.map((s) => (
@@ -109,6 +111,7 @@ export default function Landing() {
         </section>
 
         <section className="landing-section" id="pricing">
+          <span className="landing-overline">Pricing</span>
           <h2>Simple pricing</h2>
           <p className="landing-section-sub">Free while in testing — pay only when you love it.</p>
           <div className="landing-plans">
@@ -141,6 +144,7 @@ export default function Landing() {
         </section>
 
         <section className="landing-section landing-alt" id="faq">
+          <span className="landing-overline">FAQ</span>
           <h2>Questions, answered</h2>
           <div className="landing-faq">
             {FAQS.map((f) => (

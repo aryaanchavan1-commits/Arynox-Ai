@@ -61,7 +61,7 @@ export const metadata = {
 export const viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#f6f3ee",
+  themeColor: "#f5f4ed",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "Arynox AI" },
 };
 
