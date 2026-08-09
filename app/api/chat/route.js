@@ -5,6 +5,32 @@ import { ownerFromRequest } from "@/lib/supabase";
 export const maxDuration = 60;
 export const runtime = "nodejs";
 
+function buildSuggestions(lastUserText, tools = []) {
+  const t = String(lastUserText || "").trim().replace(/[?!.।]+$/g, "").slice(0, 80);
+  const words = t.split(/\s+/).filter(Boolean);
+  const topic = words.length > 3 ? words.slice(-3).join(" ") : t;
+  const names = tools.map((x) => x.name || "");
+  if (names.some((n) => n === "deep_research" || n === "web_search")) {
+    return [
+      `Find the very latest updates on: ${topic}`,
+      "Summarize this into 5 bullet points",
+      "Translate this to मराठी",
+    ];
+  }
+  if (names.some((n) => ["run_code", "write_file", "edit_file", "create_excel", "create_pdf", "create_docx"].includes(n))) {
+    return [
+      "Explain exactly what you just built",
+      "Add a new feature to it",
+      "Test it with edge cases and fix issues",
+    ];
+  }
+  return [
+    topic ? `Tell me more about ${topic}` : "Give me an example",
+    "Summarize the main points",
+    "Translate this to हिन्दी",
+  ];
+}
+
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -49,11 +75,12 @@ export async function POST(req) {
             codeFiles: result.codeFiles || [],
             files: result.files || [],
             workspace: result.workspace || [],
+            suggestions: buildSuggestions(userText, result.tools),
           });
         }
       } catch {}
       const newFacts = await extractMemory(userText, vis.reply);
-      return Response.json({ reply: vis.reply, lang, memory: newFacts, model: vis.usedModel, provider: "groq" });
+      return Response.json({ reply: vis.reply, lang, memory: newFacts, model: vis.usedModel, provider: "groq", suggestions: buildSuggestions(userText, []) });
     }
 
     const result = await runAgent(agentParams);
@@ -71,6 +98,7 @@ export async function POST(req) {
       codeFiles: result.codeFiles || [],
       files: result.files || [],
       workspace: result.workspace || [],
+      suggestions: buildSuggestions(userText, result.tools),
     });
   } catch (err) {
     return Response.json({ error: String(err?.message || err).slice(0, 300) }, { status: 500 });

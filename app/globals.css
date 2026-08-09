@@ -212,7 +212,7 @@ html, body {
 .sugg-card > span { font-size: 24px; }
 .sugg-card b { display: block; font-size: 14px; }
 .sugg-card em { font-style: normal; font-size: 12px; color: var(--text2); }
-.msg { display: flex; gap: 10px; width: 100%; max-width: 760px; align-self: center; align-items: flex-start; }
+.msg { display: flex; gap: 10px; width: 100%; max-width: 760px; align-self: center; align-items: flex-start; line-height: 1.6; }
 .msg.user { justify-content: flex-end; }
 .msg.assistant { justify-content: flex-start; }
 .avatar {
@@ -597,7 +597,13 @@ html, body {
 .icon-btn { border-radius: 10px; }
 .composer-box { border-radius: 20px; }
 .avatar { border-radius: 12px; }
-.msg { line-height: 1.6; }
+.sugg-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.sugg-chip { cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease; }
+.sugg-chip:hover { transform: translateY(-1px); border-color: rgba(201, 100, 66, 0.45); box-shadow: 0 0 0 1px rgba(201, 100, 66, 0.2); }
+.bubble blockquote { margin: 6px 0; padding: 6px 12px; border-left: 3px solid rgba(201, 100, 66, 0.5); background: var(--panel); border-radius: 0 10px 10px 0; color: var(--text2); }
+.bubble ol.md-list { padding-left: 22px; }
+.bubble .md-list li { margin: 2px 0; }
+.bubble a { color: var(--accent1); text-decoration: underline; text-underline-offset: 2px; }
 .topbar, .ide-preview-head, .console-head { letter-spacing: 0.01em; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid #3898ec; outline-offset: 2px; }
 @media (max-width: 900px) { .landing-hero h1 { font-size: 38px; } .landing-section h2 { font-size: 32px; } }

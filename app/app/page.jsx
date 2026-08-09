@@ -27,9 +27,15 @@ function md(s) {
     .replace(/^### (.+)$/gm, "<h4>$1</h4>")
     .replace(/^## (.+)$/gm, "<h3>$1</h3>")
     .replace(/^# (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^&gt; (.+)$/gm, "<blockquote>$1</blockquote>")
     .replace(/^[-•] (.+)$/gm, "<li>$1</li>")
-    .replace(/(?:<li>.*?<\/li>(?:\n)?)+/g, (m) => "<ul class=\"md-list\">" + m.replace(/\n/g, "") + "</ul>")
+    .replace(/^(\d+)[.)] (.+)$/gm, '<li class="num">$2</li>')
+    .replace(/(?:<li(?: class="num")?>.*?<\/li>(?:\n)?)+/g, (m) => {
+      const tag = m.includes('class="num"') ? "ol" : "ul";
+      return `<${tag} class="md-list">` + m.replace(/\n/g, "").replace(/ class="num"/g, "") + `</${tag}>`;
+    })
     .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer"><img class="generated md-img" src="$2" alt="$1" loading="lazy"/></a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s<>")\]]+)/g, '$1<a href="$2" target="_blank" rel="noreferrer">$2</a>')
     .replace(/\n\n/g, "<br/>");
 }
 function parseBlocks(content) {
@@ -124,8 +130,7 @@ export default function Home() {
   const endRef = useRef(null);
   const recRef = useRef(null);
   const chunksRef = useRef([]);
-  const fileRef = useRef(null);
-  const officeRef = useRef(null);
+  const attachRef = useRef(null);
   const projectRef = useRef(null);
   const pendingPromptRef = useRef("");
   const videoRef = useRef(null);
@@ -284,7 +289,7 @@ export default function Home() {
 
   const persist = (msgs) => {
     setMessages(msgs);
-    const slim = msgs.slice(-40).map((m) => ({ role: m.role, content: m.content, lang: m.lang, image: m.image, files: m.files, tools: m.tools, codeFiles: m.codeFiles }));
+    const slim = msgs.slice(-40).map((m) => ({ role: m.role, content: m.content, lang: m.lang, image: m.image, files: m.files, tools: m.tools, codeFiles: m.codeFiles, suggestions: m.suggestions }));
     save(KEY.history, slim);
     if (msgs.length) {
       const id = activeConvId || String(Date.now());
@@ -507,7 +512,7 @@ export default function Home() {
       setBusy(false);
         return;
       }
-      const aiMsg = { role: "assistant", content: data.reply, lang: data.lang || "en", tools: data.tools || [], codeFiles: data.codeFiles || [], files: data.files || [] };
+      const aiMsg = { role: "assistant", content: data.reply, lang: data.lang || "en", tools: data.tools || [], codeFiles: data.codeFiles || [], files: data.files || [], suggestions: data.suggestions || [] };
       persist([...history, aiMsg]);
       if (Array.isArray(data.memory) && data.memory.length) {
         setMemory((prev) => { const next = [...prev]; for (const f of data.memory) if (!next.includes(f)) next.push(f); save(KEY.memory, next); return next; });
@@ -549,19 +554,33 @@ export default function Home() {
 
   const stopGeneration = () => abortRef.current?.abort();
 
-  const onPickImage = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setImage(reader.result);
-    reader.readAsDataURL(file);
+  const transcribeFile = async (file) => {
+    setBusy(true);
+    showToast("🎤 transcribing " + file.name + "...");
+    try {
+      const form = new FormData();
+      form.append("audio", file);
+      const res = await fetch("/api/stt", { method: "POST", body: form, signal: AbortSignal.timeout(90000) });
+      const data = await res.json();
+      if (res.ok && data.text) { setInput(data.text); setTimeout(() => send(data.text), 60); }
+      else showToast("🎤 could not transcribe this audio");
+    } catch { showToast("🎤 audio error"); }
+    finally { setBusy(false); }
   };
 
-  const onPickOfficeFile = async (e) => {
-    const file = e.target.files?.[0];
+  const attachFile = async (file) => {
     if (!file) return;
-    e.target.value = "";
     if (busy) { showToast("⏳ wait — the agent is working"); return; }
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => setImage(reader.result);
+      reader.readAsDataURL(file);
+      return;
+    }
+    if (file.type.startsWith("audio/") || /\.(mp3|wav|m4a|ogg|webm|oga|aac|opus)$/i.test(file.name)) {
+      transcribeFile(file);
+      return;
+    }
     setBusy(true);
     showToast("📄 reading " + file.name + "...");
     try {
@@ -575,6 +594,12 @@ export default function Home() {
       await send(`Here is the content of the file "${file.name}" (${file.size} bytes):\n\n${content.slice(0, 8000)}\n\n${task}`);
     } catch (err) { persist([...messages, { role: "assistant", content: "File error: " + err.message, lang: "en" }]); }
     finally { setBusy(false); }
+  };
+
+  const onPickAnyFile = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    attachFile(file);
   };
 
   const startRecord = async () => {
@@ -867,7 +892,7 @@ export default function Home() {
                     <button className="sugg-card" onClick={() => send("What's today's latest tech news?")}><span>🔎</span><div><b>Live info</b><em>Search the web for answers</em></div></button>
                     <button className="sugg-card" onClick={() => send("Draw a futuristic city at night")}><span>🖼️</span><div><b>Generate an image</b><em>Create art on demand</em></div></button>
                     <button className="sugg-card" onClick={() => send("Build a to-do app with HTML, CSS and JS")}><span>💻</span><div><b>Web app project</b><em>Multi-file app in your IDE</em></div></button>
-                    <button className="sugg-card" onClick={() => { pendingPromptRef.current = "Summarize this file"; officeRef.current?.click(); }}><span>📎</span><div><b>Work with files</b><em>Excel, CSV, Word, images</em></div></button>
+                    <button className="sugg-card" onClick={() => { pendingPromptRef.current = "Summarize this file"; attachRef.current?.click(); }}><span>📎</span><div><b>Work with files</b><em>Any file — Excel, Word, PDF, audio, images</em></div></button>
                   </div>
                   <div className="welcome-sub">For business owners — hotels, resorts, restaurants in Konkan & beyond</div>
                   <div className="sugg-grid">
@@ -895,6 +920,13 @@ export default function Home() {
                     )}
                     {m.role === "assistant" && <FileChips files={m.files} />}
                     {m.role === "assistant" && <ToolChips tools={m.tools} />}
+                    {m.role === "assistant" && m.suggestions?.length > 0 && (
+                      <div className="sugg-row">
+                        {m.suggestions.map((s, j) => (
+                          <button key={j} className="chip sugg-chip" onClick={() => send(s)}>💬 {s}</button>
+                        ))}
+                      </div>
+                    )}
                     {m.role === "assistant" && !m.image && (
                       <div className="msg-actions">
                         <button className="icon-btn" title="Copy" onClick={() => { navigator.clipboard.writeText(m.content).then(() => showToast("📋 copied to clipboard")); }}>📋</button>
@@ -918,10 +950,8 @@ export default function Home() {
               )}
               <div className="composer-box">
                 <div className="input-row">
-                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPickImage} />
-                  <input ref={officeRef} type="file" accept=".xlsx,.csv,.txt,.docx,.pdf" hidden onChange={onPickOfficeFile} />
-                  <button className="tool-btn" title="Attach a photo" onClick={() => fileRef.current?.click()}>📷</button>
-                  <button className="tool-btn" title="Attach Excel/CSV/Word/PDF file" onClick={() => officeRef.current?.click()}>📎</button>
+                  <input ref={attachRef} type="file" accept="image/*,audio/*,.pdf,.xlsx,.csv,.docx,.doc,.txt,.md,.json,.js,.ts,.py,.html,.css,.zip" hidden onChange={onPickAnyFile} />
+                  <button className="tool-btn" title="Attach any file — photo, audio, PDF, Excel, Word, code…" onClick={() => attachRef.current?.click()}>📎</button>
                   <textarea rows={1} placeholder={genMode ? "Describe the image you want..." : "Ask anything — in English, हिन्दी or मराठी"}
                     value={input} onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
