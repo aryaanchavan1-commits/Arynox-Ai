@@ -663,6 +663,8 @@ html { scroll-behavior: smooth; }
   .landing-grid { grid-template-columns: repeat(2, 1fr); }
   .landing-hero { grid-template-columns: 1fr; padding-top: 44px; }
   .landing-links { display: none; }
+  .landing-nav { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .landing-mock, .mock-chip { animation: none; }
 }
 @media (max-width: 560px) {
   .landing-grid, .landing-steps, .landing-plans { grid-template-columns: 1fr; }

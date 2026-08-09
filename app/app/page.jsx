@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
@@ -83,7 +83,7 @@ export default function Home() {
   const [theme, setTheme] = useState(() => load(KEY.theme, "light"));
   const [creds, setCreds] = useState(() => load(KEY.creds, { githubToken: "", gmailUser: "", gmailPass: "", mcpUrl: "", mcpToken: "", mcpServers: [] }));
   const [user, setUser] = useState(() => load(KEY.session, null));
-  const [authChecked, setAuthChecked] = useState(false);
+  const [authChecked, setAuthChecked] = useState(() => load(KEY.session, null) !== null);
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState("in");
   const [authName, setAuthName] = useState("");
@@ -157,7 +157,10 @@ export default function Home() {
     const iv = setInterval(ping, 540000);
     return () => clearInterval(iv);
   }, []);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
+  useEffect(() => {
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    endRef.current?.scrollIntoView({ behavior: coarse ? "auto" : "smooth", block: "end" });
+  }, [messages, busy]);
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -725,6 +728,8 @@ export default function Home() {
 
   const file = project[activeFile] || project[0];
 
+  const parsedMsgs = useMemo(() => messages.map((m) => ({ ...m, blocks: parseBlocks(m.content) })), [messages]);
+
   if (!authChecked) {
     return (
       <div className="authgate">
@@ -863,7 +868,7 @@ export default function Home() {
                   </div>
                 </div>
               )}
-              {messages.map((m, i) => (                <div className={`msg ${m.role}`} key={i}>
+              {parsedMsgs.map((m, i) => (                <div className={`msg ${m.role}`} key={i}>
                   {m.role === "assistant" && <div className="avatar">✦</div>}
                   <div className="msg-body">
                     {m.image && m.role === "user" ? <img className="attached" src={m.image} alt="attached" /> : null}
@@ -875,7 +880,7 @@ export default function Home() {
                       </div>
                     ) : (
                       <div className="bubble">
-                        {parseBlocks(m.content).map((p, j) => p.type === "code" ? <CodeBlock key={j} code={p.code} filename={`solution_${j + 1}.${p.language === "python" ? "py" : "js"}`} /> : <span key={j} dangerouslySetInnerHTML={{ __html: p.html }} />)}
+                        {m.blocks.map((p, j) => p.type === "code" ? <CodeBlock key={j} code={p.code} filename={`solution_${j + 1}.${p.language === "python" ? "py" : "js"}`} /> : <span key={j} dangerouslySetInnerHTML={{ __html: p.html }} />)}
                       </div>
                     )}
                     {m.role === "assistant" && <FileChips files={m.files} />}
