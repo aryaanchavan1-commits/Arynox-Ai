@@ -272,6 +272,14 @@ export default function Home() {
     showToast("👋 signed out — sign in again to continue");
   };
 
+  const demoSignIn = () => {
+    const u = { id: "demo", email: "demo@arynox.ai", name: "Demo User", token: "demo-session", demo: true };
+    setUser(u);
+    save(KEY.session, u);
+    setAuthOpen(false);
+    showToast("🎉 exploring in demo mode — sign in to keep your work across devices");
+  };
+
   const setBusinessProfile = (patch) => setBusiness((prev) => { const next = { ...(prev || {}), ...patch }; save(KEY.business, next); return next; });
 
   const persist = (msgs) => {
@@ -750,7 +758,7 @@ export default function Home() {
         <div className="authgate-card">
           <div className="authgate-brand">✦</div>
           <h1>Welcome to Arynox AI</h1>
-          <p className="authgate-tag">Sign in to continue — your workspace, files and memory are saved to your account, on any device.</p>
+          <p className="authgate-tag">Sign in to continue — your workspace, files and memory are saved to your account, on any device. Or jump straight in with the demo below.</p>
           <div className="auth-tabs">
             <button className={authTab === "in" ? "active" : ""} onClick={() => { setAuthTab("in"); setAuthError(""); }}>Sign in</button>
             <button className={authTab === "up" ? "active" : ""} onClick={() => { setAuthTab("up"); setAuthError(""); }}>Create account</button>
@@ -762,6 +770,7 @@ export default function Home() {
           <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={doAuth}>{authBusy ? "Working..." : authTab === "in" ? "Sign in" : "Create account"}</button>
           <div className="auth-or">or</div>
           <button className="chip" style={{ width: "100%" }} disabled={authBusy} onClick={googleSignIn}>🔵 Continue with Google</button>
+          <button className="chip demo-btn" style={{ width: "100%" }} disabled={authBusy} onClick={demoSignIn}>⚡ Try a quick demo — no account needed</button>
           <div className="authgate-feats">
             <span>💬 Trilingual chat</span><span>🛠 Coding IDE + live preview</span><span>🎤 Voice & 📷 vision</span><span>📊 Excel · PDF · Word</span><span>📱 Installable app</span>
           </div>
@@ -804,7 +813,7 @@ export default function Home() {
           {user ? (
             <button className="user-chip" onClick={signOut} title="Signed in - click to sign out">
               <span className="user-avatar">{(user.name || "U")[0].toUpperCase()}</span>
-              <span className="user-email">{user.email || user.name}</span>
+              <span className="user-email">{user.email || user.name}{user.demo ? " · demo" : ""}</span>
             </button>
           ) : (
             <button className="signin-btn" onClick={() => { setAuthOpen(true); setAuthError(""); }}>👤<span>Sign in</span></button>
@@ -1174,6 +1183,7 @@ export default function Home() {
                 <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={doAuth}>{authBusy ? "Working..." : authTab === "in" ? "Sign in" : "Create account"}</button>
                 <div className="auth-or">or</div>
                 <button className="chip" style={{ width: "100%" }} disabled={authBusy} onClick={googleSignIn}>🔵 Continue with Google</button>
+                <button className="chip demo-btn" style={{ width: "100%" }} disabled={authBusy} onClick={demoSignIn}>⚡ Try a quick demo — no account needed</button>
                 <p className="auto-note">Your workspace, files and business profile are saved to your account — sign in on any device to continue.</p>
               </div>
             )}
