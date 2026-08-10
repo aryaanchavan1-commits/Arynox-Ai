@@ -1,8 +1,8 @@
 {
   "id": "arynox-ai",
-  "name": "Arynox AI — Trilingual AI Assistant (Hindi, Marathi, English) | Maharashtra",
+  "name": "Arynox AI - Trilingual AI Assistant",
   "short_name": "Arynox AI",
-  "description": "Maharashtra's premium trilingual AI assistant: chat, voice, vision, code, images and office files in English, हिन्दी and मराठी. Installs as a real app.",
+  "description": "Maharashtra's premium trilingual AI assistant: chat, voice, vision, code, images and office files in English, Hindi and Marathi. Installs as a real app.",
   "lang": "en-IN",
   "start_url": "/",
   "scope": "/",

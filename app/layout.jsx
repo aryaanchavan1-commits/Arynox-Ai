@@ -2,6 +2,7 @@ import "./globals.css";
 
 export const metadata = {
   metadataBase: new URL("https://arynox-ai.vercel.app"),
+  manifest: "/manifest.webmanifest",
   title: {
     default: "Arynox AI — Trilingual AI Assistant (Hindi, Marathi, English) | Maharashtra",
     template: "%s | Arynox AI",

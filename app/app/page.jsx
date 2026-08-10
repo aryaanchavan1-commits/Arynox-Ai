@@ -9,7 +9,7 @@ import JSZip from "jszip";
 import { classify } from "@/lib/intent";
 import { sb } from "@/lib/supabase-client";
 
-const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos", code: "arynox_code_msgs" };
+const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos", code: "arynox_code_msgs", voice: "arynox_voice" };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
@@ -70,6 +70,14 @@ const OBJECT_ICONS = {
   snowboard: "🏂", frisbee: "🥏", kite: "🪁", umbrella: "☂️", scissors: "✂️", toothbrush: "🪥", hair_drier: "💨", razor: "🪒",
   sandwich: "🥪", banana: "🍌", apple: "🍎", orange: "🍊", carrot: "🥕", broccoli: "🥦", cake: "🍰", donut: "🍩", pizza: "🍕", hot_dog: "🌭", french_fries: "🍟",
 };
+const VEHICLES = ["car", "truck", "bus", "motorcycle", "bicycle"];
+const VEHICLE_LABEL = { car: "car", truck: "truck", bus: "bus", motorcycle: "motorbike", bicycle: "bicycle" };
+const WA_TEMPLATES = [
+  { id: "loan", icon: "🏦", title: "Loan repayment reminder", tag: "Banks & NBFCs", fields: [{ k: "bank", label: "Bank / branch name", ph: "Konkan Co-op Bank" }, { k: "customer", label: "Customer name", ph: "Ramesh Patil" }, { k: "amount", label: "EMI amount (₹)", ph: "8500" }, { k: "due", label: "Due date", ph: "15 Aug" }, { k: "balance", label: "Outstanding balance (₹)", ph: "120000" }], make: (f) => `Dear ${f.customer || "customer"},\n\nA gentle reminder that your loan instalment of ₹${f.amount || "—"} at ${f.bank || "our bank"} is due on ${f.due || "the due date"}. Your current outstanding balance is ₹${f.balance || "—"}.\n\nPlease pay on time to avoid late fees. For any questions, reply to this message.\n\n— ${f.bank || "Your Bank"}` },
+  { id: "hotel", icon: "🏨", title: "Booking confirmation", tag: "Hotels & resorts", fields: [{ k: "hotel", label: "Hotel name", ph: "Hotel Konkan Darshan" }, { k: "guest", label: "Guest name", ph: "Amit Desai" }, { k: "room", label: "Room type", ph: "Sea-view AC" }, { k: "checkin", label: "Check-in", ph: "12 Aug, 2 PM" }, { k: "checkout", label: "Check-out", ph: "14 Aug, 11 AM" }], make: (f) => `Dear ${f.guest || "guest"},\n\nYour booking at ${f.hotel || "our hotel"} is confirmed: ${f.room || "room"} · Check-in ${f.checkin || "—"} · Check-out ${f.checkout || "—"}.\n\nWe look forward to welcoming you! Reply for pick-up, food or any help.\n\n— ${f.hotel || "The Hotel"}` },
+  { id: "order", icon: "🍽", title: "Order received", tag: "Restaurants", fields: [{ k: "rest", label: "Restaurant name", ph: "Sea Breeze Restaurant" }, { k: "name", label: "Customer name", ph: "Sneha Kulkarni" }, { k: "items", label: "Ordered items", ph: "2 Fish Thali, 1 Kokam Sarbat" }, { k: "time", label: "Ready time", ph: "20 min" }], make: (f) => `Hi ${f.name || "guest"},\n\nWe received your order at ${f.rest || "our restaurant"}: ${f.items || "—"}.\n\nIt will be ready in about ${f.time || "20 minutes"}. Pay when you collect.\n\n— ${f.rest || "The Restaurant"}` },
+  { id: "itinerary", icon: "🗺", title: "Itinerary share", tag: "Travel & tours", fields: [{ k: "agency", label: "Agency name", ph: "Konkan Tours" }, { k: "guest", label: "Guest name", ph: "John D" }, { k: "day1", label: "Day 1 plan", ph: "Arrive Ratnagiri, Ganpatipule beach" }, { k: "day2", label: "Day 2 plan", ph: "Boat ride + coconut tour" }], make: (f) => `Hi ${f.guest || "guest"}!\n\nYour ${f.agency || "tour"} plan is ready:\n• Day 1 — ${f.day1 || "—"}\n• Day 2 — ${f.day2 || "—"}\n\nPack light, we start early. Questions? Reply here.\n\n— ${f.agency || "Your Agency"}` },
+];
 
 export default function Home() {
   const [tab, setTab] = useState("chat");
@@ -143,6 +151,22 @@ export default function Home() {
   const [detectPaused, setDetectPaused] = useState(false);
   const [aiVision, setAiVision] = useState(false);
   const [aiFailed, setAiFailed] = useState(false);
+  const [camDevices, setCamDevices] = useState([]);
+  const [activeCamId, setActiveCamId] = useState("");
+  const [vehicleAlert, setVehicleAlert] = useState(null);
+  const [voiceAlerts, setVoiceAlerts] = useState(true);
+  const [liveAsk, setLiveAsk] = useState("");
+  const [liveBusy, setLiveBusy] = useState(false);
+  const [liveReplies, setLiveReplies] = useState([]);
+  const [watchMode, setWatchMode] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("voice");
+  const [voiceSet, setVoiceSet] = useState(() => load(KEY.voice, { provider: "server", rate: 1, pitch: 1, browserVoice: "", vbUrl: "http://127.0.0.1:17493", vbProfile: "" }));
+  const [vbProfiles, setVbProfiles] = useState(null);
+  const [vbTesting, setVbTesting] = useState(false);
+  const [usage, setUsage] = useState(null);
+  const [waTpl, setWaTpl] = useState(null);
+  const [waBusy, setWaBusy] = useState(false);
   const [faceOpen, setFaceOpen] = useState(false);
   const [faceBusy, setFaceBusy] = useState(false);
   const [faceErr, setFaceErr] = useState("");
@@ -184,6 +208,9 @@ export default function Home() {
   const faceStreamRef = useRef(null);
   const streamRef = useRef(null);
   const detectTimer = useRef(null);
+  const watchTimer = useRef(null);
+  const lastVehicleSpeak = useRef(0);
+  const liveBusyRef = useRef(false);
   const aiVisionRef = useRef(false);
   const tickRef = useRef(0);
   const toastTimer = useRef(null);
@@ -491,8 +518,69 @@ export default function Home() {
 
   const setCred = (k, v) => setCreds((prev) => { const next = { ...prev, [k]: v }; save(KEY.creds, next); return next; });
 
+  const speakBrowser = (text, lang) => new Promise((resolve) => {
+    if (!("speechSynthesis" in window)) return resolve(false);
+    try {
+      const voices = window.speechSynthesis.getVoices();
+      const want = voiceSet.browserVoice;
+      const v = want ? voices.find((x) => x.voiceURI === want) : null;
+      const prefix = (lang || "en").slice(0, 2);
+      const pick = v || voices.find((x) => x.lang?.toLowerCase().startsWith(prefix)) || voices[0];
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(String(text).slice(0, 500));
+      if (pick) { u.voice = pick; u.lang = pick.lang; }
+      u.rate = Number(voiceSet.rate) || 1;
+      u.pitch = Number(voiceSet.pitch) || 1;
+      u.onend = () => resolve(true);
+      u.onerror = () => resolve(false);
+      window.speechSynthesis.speak(u);
+    } catch { resolve(false); }
+  });
+
+  const speakVoicebox = async (text, lang) => {
+    const url = String(voiceSet.vbUrl || "http://127.0.0.1:17493").replace(/\/+$/, "");
+    try {
+      const res = await fetch(`${url}/speak`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: String(text).slice(0, 2000), profile: voiceSet.vbProfile || undefined, language: lang || undefined }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return false;
+      const blob = await res.blob();
+      if (!blob.size) return false;
+      audioRef.current?.pause();
+      const a = new Audio(URL.createObjectURL(blob));
+      audioRef.current = a;
+      await a.play();
+      return true;
+    } catch { return false; }
+  };
+
+  const testVoicebox = async () => {
+    setVbTesting(true);
+    const url = String(voiceSet.vbUrl || "http://127.0.0.1:17493").replace(/\/+$/, "");
+    try {
+      const res = await fetch(`${url}/profiles`, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) throw new Error("status " + res.status);
+      const data = await res.json();
+      const profiles = Array.isArray(data) ? data : data.profiles || [];
+      setVbProfiles(profiles);
+      showToast(`✅ Voicebox connected — ${profiles.length} voice${profiles.length === 1 ? "" : "s"} found`);
+    } catch {
+      setVbProfiles([]);
+      showToast("❌ Voicebox not reachable — download & run the free app from voicebox.sh first");
+    } finally { setVbTesting(false); }
+  };
+
   const speak = async (text, lang) => {
     if (!text) return;
+    const provider = voiceSet.provider || "server";
+    if (provider === "voicebox") {
+      if (await speakVoicebox(text, lang).catch(() => false)) return;
+    } else if (provider === "browser") {
+      if (await speakBrowser(text, lang).catch(() => false)) return;
+    }
     try {
       audioRef.current?.pause();
       const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: lang || "en" }), signal: AbortSignal.timeout(30000) });
@@ -501,6 +589,21 @@ export default function Home() {
       const a = new Audio(url);
       audioRef.current = a;
       await a.play();
+    } catch {}
+  };
+
+  const trackUsage = (action) => {
+    if (!user?.token) return;
+    try {
+      fetch("/api/usage", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ action }), signal: AbortSignal.timeout(8000) }).catch(() => {});
+    } catch {}
+  };
+
+  const refreshUsage = async () => {
+    if (!user?.token) { setUsage(null); return; }
+    try {
+      const res = await fetch("/api/usage", { headers: authHeaders(), signal: AbortSignal.timeout(8000) });
+      if (res.ok) setUsage(await res.json());
     } catch {}
   };
 
@@ -532,6 +635,7 @@ export default function Home() {
   const runCode = async (code, label) => {
     setRunning(true);
     setRunOut(`▶ Running ${label || "code"}...`);
+    trackUsage("code");
     try {
       const language = (label || "").toLowerCase().endsWith(".py") ? "python" : "javascript";
       const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, language }), signal: AbortSignal.timeout(30000) });
@@ -681,6 +785,7 @@ export default function Home() {
     persist(history);
     setImage(null);
     setBusy(true);
+    trackUsage(gen ? "images" : "chat");
 
     if (gen) {
       const prompt = genMode ? text.replace(GEN_RE, "").trim() || text : text.replace(/^(generate|create|draw|make|imagine|render|show|give)\s+(me\s+)?/i, "").trim().replace(/[.!?]+$/, "") || text;
@@ -1032,14 +1137,27 @@ export default function Home() {
 
   const kioskReset = () => { kioskRef.current.step = "idle"; setKioskStep("idle"); setKioskStatus("🟢 Waiting for the next visitor…"); }; 
 
-  const startCamera = async () => {
+  const loadCameras = async (preferred) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter((d) => d.kind === "videoinput").map((d) => ({ id: d.deviceId, label: d.label || "Camera" }));
+      setCamDevices(cams);
+      if (preferred) setActiveCamId(preferred);
+      else if (!activeCamId && cams.length) setActiveCamId(cams[0].id);
+      return cams;
+    } catch { return []; }
+  };
+
+  const startCamera = async (deviceId) => {
+    try {
+      const video = deviceId ? { width: 640, height: 480, deviceId: { exact: deviceId } } : { width: 640, height: 480 };
+      const stream = await navigator.mediaDevices.getUserMedia({ video });
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
-      setCamOn(true); setObjects([]); setBoxes([]); setDocs([]); setDetectPaused(false);
+      setCamOn(true); setObjects([]); setBoxes([]); setDocs([]); setVehicleAlert(null); setDetectPaused(false);
       setAiFailed(false);
+      loadCameras(stream.getVideoTracks()[0]?.getSettings()?.deviceId || deviceId);
       import("@/lib/detect")
         .then((m) => m.loadObjectModel().then(() => { aiVisionRef.current = true; setAiVision(true); }).catch(() => { aiVisionRef.current = false; setAiFailed(true); }))
         .catch(() => { aiVisionRef.current = false; setAiFailed(true); });
@@ -1048,15 +1166,85 @@ export default function Home() {
     } catch { showToast("👁 camera blocked — allow access in the browser"); }
   };
 
+  const switchCamera = async (deviceId) => {
+    if (!camOn) { startCamera(deviceId); return; }
+    try {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      clearInterval(detectTimer.current);
+      detectTimer.current = null;
+      await startCamera(deviceId);
+    } catch { showToast("📷 could not switch to that camera"); }
+  };
+
+  const flipCamera = async () => {
+    let cams = camDevices;
+    if (!cams.length) cams = await loadCameras();
+    if (cams.length < 2) { showToast("📷 only one camera found — add another to switch"); return; }
+    const idx = Math.max(0, cams.findIndex((d) => d.id === activeCamId));
+    const next = cams[(idx + 1) % cams.length];
+    await switchCamera(next.id);
+  };
+
   const stopCamera = () => {
-    setCamOn(false); setObjects([]); setBoxes([]); setDocs([]);
+    setCamOn(false); setObjects([]); setBoxes([]); setDocs([]); setVehicleAlert(null);
     clearInterval(detectTimer.current);
     detectTimer.current = null;
+    clearInterval(watchTimer.current);
+    watchTimer.current = null;
+    setWatchMode(false);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     const ov = overlayRef.current;
     if (ov) ov.getContext("2d").clearRect(0, 0, ov.width, ov.height);
+  };
+
+  const askLive = async (q) => {
+    const v = videoRef.current;
+    if (!v?.videoWidth) { showToast("👁 start the camera first"); return; }
+    const text = String(q ?? liveAsk).trim();
+    if (!text || liveBusyRef.current) return;
+    liveBusyRef.current = true;
+    setLiveBusy(true);
+    setLiveAsk("");
+    try {
+      const c = document.createElement("canvas");
+      c.width = v.videoWidth; c.height = v.videoHeight;
+      c.getContext("2d").drawImage(v, 0, 0);
+      const image = c.toDataURL("image/jpeg", 0.72);
+      const history = liveReplies.slice(-6).flatMap((r) => [{ role: "user", content: r.q }, { role: "assistant", content: r.a }]);
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ messages: [{ role: "user", content: text }], memory: memory.slice(0, 20), image, business, history }),
+        signal: AbortSignal.timeout(90000),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Live vision failed");
+      const reply = String(d.reply || "").replace(/[#*`]/g, "").slice(0, 700);
+      setLiveReplies((prev) => [...prev.slice(-9), { q: text, a: reply, t: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
+      trackUsage("live_vision");
+      speak(reply, d.lang || "en");
+    } catch (err) {
+      setLiveReplies((prev) => [...prev.slice(-9), { q: text, a: "⚠ " + String(err?.message || err).slice(0, 200), t: "" }]);
+    } finally { liveBusyRef.current = false; setLiveBusy(false); }
+  };
+
+  const toggleWatch = () => {
+    const next = !watchMode;
+    setWatchMode(next);
+    if (next) {
+      showToast("👀 Watching mode on — I will look, think and speak every 30 seconds");
+      askLive("You are my live eyes right now. Look at what is in front of me and tell me in 2 short sentences what is happening, and check the web for anything relevant to it right now.");
+      watchTimer.current = setInterval(() => {
+        askLive("Keep watching. Is there anything new or important happening now? Answer in 1-2 short sentences.");
+      }, 30000);
+    } else {
+      clearInterval(watchTimer.current);
+      watchTimer.current = null;
+      showToast("Watching mode off");
+    }
   };
 
   const drawBoxes = (objs, docArr) => {
@@ -1098,6 +1286,22 @@ export default function Home() {
           const p = prev.filter((o) => o.name !== "person");
           return [{ name: "person", count: humans }, ...p];
         });
+        const vehs = objs.filter((b) => VEHICLES.includes(b.name));
+        if (vehs.length) {
+          const top = vehs.slice().sort((a, b) => b.score - a.score)[0];
+          const vh = v.videoHeight || 480;
+          const proxRatio = (top.box[3] || 0) / vh;
+          const dist = proxRatio > 0.55 ? "near" : proxRatio > 0.3 ? "medium" : "far";
+          setVehicleAlert({ name: top.name, score: Math.round(top.score * 100), dist });
+          if (voiceAlerts && Date.now() - lastVehicleSpeak.current > 12000) {
+            lastVehicleSpeak.current = Date.now();
+            const dn = VEHICLE_LABEL[top.name] || top.name;
+            const ds = dist === "near" ? "very close, right in front" : dist === "medium" ? "getting closer" : "in the distance";
+            speak(`Attention! A ${dn} is ${ds}. Be careful.`, "en");
+          }
+        } else {
+          setVehicleAlert(null);
+        }
         requestAnimationFrame(() => drawBoxes(objs, docArr));
         if (kioskRef.current.step === "idle" && !kioskRef.current.busy && Date.now() - kioskRef.current.lastAsk > 60000) {
           kioskRef.current.lastAsk = Date.now();
@@ -1361,6 +1565,7 @@ export default function Home() {
           )}
           <button className={`upgrade-btn ${me.premium ? "premium" : ""}`} onClick={() => setUpgradeOpen(true)}>💎<span>{me.premium ? "Pro active" : "Upgrade"}</span></button>
           <button className="upgrade-btn" onClick={() => { if (adminMode) { setUpgradeOpen(true); setTimeout(refreshAdminPanel, 50); } else setAdminOpen(true); }} title="Admin panel">🛡<span>Admin</span></button>
+          <button className="upgrade-btn" onClick={() => { setSettingsTab("voice"); setSettingsOpen(true); refreshUsage(); }} title="Settings — voice & usage">⚙<span>Settings</span></button>
           {user ? (
             <button className="user-chip" onClick={signOut} title="Signed in - click to sign out">
               <span className="user-avatar">{(user.name || "U")[0].toUpperCase()}</span>
@@ -1586,8 +1791,20 @@ export default function Home() {
         {tab === "camera" && (
           <div className="camera">
             <header className="topbar">
-              <div className="brand"><span className={`dot ${camOn ? "busy" : ""}`} /><span className="status">{camOn ? (aiVision ? "⚡ on-device AI vision — people, objects & documents" : "watching what's in front of the camera") : "camera is off"}</span></div>
-              <div className="toggles">
+              <div className="brand"><span className={`dot ${camOn ? "busy" : ""}`} /><span className="status">{camOn ? (aiVision ? "⚡ on-device AI vision — people, vehicles, objects & documents" : "watching what's in front of the camera") : "camera is off"}</span></div>
+              <div className="toggles cam-toggles">
+                {camOn && camDevices.length > 1 && (
+                  <>
+                    <button className="chip" onClick={flipCamera} title="Switch front / back camera">🔃 <span className="cam-toggle-label">Switch</span></button>
+                    <select className="cam-select" value={activeCamId || ""} onChange={(e) => switchCamera(e.target.value)} title="Choose camera">
+                      {camDevices.map((d, i) => (
+                        <option key={d.id} value={d.id}>{d.label.replace(/\(.*\)/g, "").trim() || `Camera ${i + 1}`}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
+                {camOn && <button className={`chip ${watchMode ? "cam-on" : ""}`} onClick={toggleWatch} title="Look, think and speak every 30 seconds">👀 <span className="cam-toggle-label">{watchMode ? "Watching…" : "Watch"}</span></button>}
+                {camOn && <button className="chip" onClick={() => setVoiceAlerts((v) => !v)} title="Spoken vehicle alerts">{voiceAlerts ? "🔊" : "🔇"} <span className="cam-toggle-label">{voiceAlerts ? "Alerts on" : "Alerts off"}</span></button>}
                 {camOn && <button className="chip" onClick={() => setDetectPaused((p) => !p)}>{detectPaused ? "▶ Resume" : "⏸ Pause"}</button>}
                 {kioskOn ? <button className="chip cam-off" onClick={kioskStop}>🧑🤝🧑 Stop visitor mode</button> : <button className="chip cam-on" onClick={kioskStart}>🧑🤝🧑 Visitor mode</button>}
                 {camOn ? <button className="chip cam-off" onClick={stopCamera}>■ Stop</button> : <button className="chip cam-on" onClick={startCamera}>● Start seeing</button>}
@@ -1597,43 +1814,83 @@ export default function Home() {
               <div className="cam-frame">
                 <video ref={videoRef} muted playsInline />
                 <canvas ref={overlayRef} className="cam-overlay" />
+                {vehicleAlert && (
+                  <div className="vehicle-alert">
+                    <span className="vehicle-pulse" />
+                    ⚠️ {VEHICLE_LABEL[vehicleAlert.name] || vehicleAlert.name} approaching — {vehicleAlert.dist === "near" ? "very close!" : vehicleAlert.dist === "medium" ? "getting closer" : "in the distance"} · {vehicleAlert.score}%
+                  </div>
+                )}
                 {!camOn && (
                   <div className="cam-placeholder">
                     <span>👁</span>
                     <p className="cam-place-title">See the world live</p>
-                    <p>Press <b>Start seeing</b> and I will detect <b>people, objects and documents</b> in real time — on your device.</p>
+                    <p>Press <b>Start seeing</b> and I will detect <b>people, vehicles, animals, objects and documents</b> in real time — on your device. Ask questions, get spoken answers and live web data.</p>
                     <button className="send-btn cam-big" onClick={startCamera}>● Start seeing</button>
                   </div>
                 )}
                 {camOn && objects.length > 0 && (
                   <div className="overlay">
-                    {objects.map((o, i) => <span className={`detect-chip ${o.name === "person" ? "chip-human" : o.name === "document" ? "chip-doc" : ""}`} key={i}>{OBJECT_ICONS[o.name] || "🔸"} {o.name}{o.count > 1 ? ` ×${o.count}` : ""}</span>)}
+                    {objects.map((o, i) => (
+                      <span className={`detect-chip ${o.name === "person" ? "chip-human" : o.name === "document" ? "chip-doc" : VEHICLES.includes(o.name) ? "chip-vehicle" : ""}`} key={i}>
+                        {OBJECT_ICONS[o.name] || "🔸"} {o.name}{o.count > 1 ? ` ×${o.count}` : ""}
+                      </span>
+                    ))}
                   </div>
                 )}
                 <div className="cam-legend">
                   <span><i className="lg-human" /> human</span>
+                  <span><i className="lg-vehicle" /> vehicle</span>
                   <span><i className="lg-doc" /> document</span>
                   <span><i className="lg-obj" /> object</span>
                 </div>
               </div>
               <div className="detect-panel">
                 <div className="detect-title">{camOn ? "I can see:" : "Detection is off"}</div>
-                {camOn && !aiVision && !aiFailed && <div className="detect-empty">{detecting ? "Loading on-device AI…" : "Loading on-device AI…"}</div>}
+                {camOn && !aiVision && !aiFailed && <div className="detect-empty">Loading on-device AI…</div>}
                 {camOn && aiFailed && <div className="detect-empty">Offline model unavailable — using cloud vision (every ~3s).</div>}
                 {camOn && objects.length === 0 && aiVision && <div className="detect-empty">{detecting ? "Looking…" : "Looking around…"}</div>}
                 <div className="detect-list">
                   {boxes.filter((b) => b.name === "person").map((b, i) => (
                     <div className="detect-row row-human" key={`h${i}`}><span>🧍</span> human <em>{Math.round(b.score * 100)}%</em></div>
                   ))}
+                  {boxes.filter((b) => VEHICLES.includes(b.name)).map((b, i) => (
+                    <div className="detect-row row-vehicle" key={`v${i}`}><span>{OBJECT_ICONS[b.name] || "🚗"}</span> {VEHICLE_LABEL[b.name] || b.name} <em>{Math.round(b.score * 100)}%</em></div>
+                  ))}
                   {docs.map((d, i) => (
                     <div className="detect-row row-doc" key={`d${i}`}><span>📄</span> document <em>detected</em></div>
                   ))}
-                  {objects.filter((o) => o.name !== "person").map((o, i) => (
+                  {objects.filter((o) => o.name !== "person" && !VEHICLES.includes(o.name)).map((o, i) => (
                     <div className="detect-row" key={i}><span>{OBJECT_ICONS[o.name] || "🔸"}</span> {o.name} <em>×{o.count}</em></div>
                   ))}
                 </div>
                 {camOn && (
                   <button className="chip speak-seen" onClick={() => speak("I can see " + objects.map((o) => o.name + (o.count > 1 ? `, ${o.count}` : "")).join(", "), "en")}>🔊 Tell me what you see</button>
+                )}
+                {camOn && (
+                  <div className="live-ask">
+                    <div className="live-ask-head"><span>🎤 Live assistant</span><em>sees · speaks · searches the web</em></div>
+                    {liveReplies.length > 0 && (
+                      <div className="live-replies">
+                        {liveReplies.map((r, i) => (
+                          <div className="live-reply" key={i}>
+                            <b>{r.t || ""}</b> {r.q && <em>“{r.q}”</em>}
+                            <p>{r.a}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="live-ask-row">
+                      <input className="live-ask-input" placeholder={liveBusy ? "Looking & thinking…" : "Ask about what I'm seeing…"} value={liveAsk}
+                        onChange={(e) => setLiveAsk(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") askLive(); }} disabled={liveBusy} />
+                      <button className="send-btn live-ask-btn" disabled={!liveAsk.trim() || liveBusy} onClick={() => askLive()}>➤</button>
+                    </div>
+                    <div className="live-ask-hints">
+                      <button className="chip" disabled={liveBusy} onClick={() => askLive("What am I looking at? Describe it in 2 short sentences.")}>👀 What do you see?</button>
+                      <button className="chip" disabled={liveBusy} onClick={() => askLive("Look at this, check the web for the latest information about it, and tell me the newest details.")}>🔎 See + search web</button>
+                      <button className="chip" disabled={liveBusy} onClick={toggleWatch}>{watchMode ? "⏸ Stop watching" : "👀 Watch mode (30s)"}</button>
+                    </div>
+                    {liveBusy && <div className="typing" style={{ alignSelf: "flex-start" }}><span /><span /><span /></div>}
+                  </div>
                 )}
                 {kioskOn && (
                   <div className="kiosk-card">
@@ -1656,7 +1913,7 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-                <p className="detect-note">⚡ Real-time on-device AI (COCO-SSD + document scanner). Nothing is recorded or uploaded.</p>
+                <p className="detect-note">⚡ Real-time on-device AI (COCO-SSD + document scanner). Vehicle alerts, watch mode and the live assistant use your camera — nothing is recorded or uploaded.</p>
               </div>
             </div>
           </div>
@@ -1675,6 +1932,71 @@ export default function Home() {
                 </div>
                 <div className="guide-list">
                   {CRED_GUIDES.map((g) => <CredGuide key={g.id} id={g.id} open={guideOpen} onToggle={setGuideOpen} />)}
+                </div>
+              </div>
+              <div className="auto-strip">
+                <div className="auto-card usage-mini">
+                  <div className="auto-card-title">📊 Your usage</div>
+                  {!user?.token ? (
+                    <p className="auto-note">Sign in to get your personal dashboard — WhatsApp, chat, images, code and more.</p>
+                  ) : (
+                    <div className="usage-mini-grid">
+                      {[["chat", "💬"], ["images", "🖼️"], ["code", "⚙️"], ["live_vision", "👁"], ["whatsapp", "🟢"], ["email", "✉️"], ["github", "🐙"], ["web", "🔎"]].map(([k, icon]) => (
+                        <div className="usage-mini-tile" key={k}><span>{icon}</span><b>{usage?.usage?.[k] || 0}</b></div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="auto-actions">
+                    <button className="chip" onClick={() => { setSettingsTab("usage"); setSettingsOpen(true); refreshUsage(); }}>📊 Open full dashboard</button>
+                  </div>
+                </div>
+                <div className="auto-card wa-templates">
+                  <div className="auto-card-title">🟢 Ready-made WhatsApp automations</div>
+                  <p className="auto-note">Pick a template, fill 4–5 fields, and send — perfect for banks (loan reminders), hotels (bookings) and restaurants (orders).</p>
+                  <div className="wa-tpl-grid">
+                    {WA_TEMPLATES.map((t) => (
+                      <button className={`wa-tpl ${waTpl?.id === t.id ? "on" : ""}`} key={t.id} onClick={() => setWaTpl(waTpl?.id === t.id ? null : { ...t, f: {} })}>
+                        <span>{t.icon}</span><b>{t.title}</b><em>{t.tag}</em>
+                      </button>
+                    ))}
+                  </div>
+                  {waTpl && (
+                    <div className="wa-tpl-form">
+                      {waTpl.fields.map((fld) => (
+                        <input key={fld.k} className="auto-input" placeholder={fld.ph} value={waTpl.f[fld.k] || ""}
+                          onChange={(e) => setWaTpl({ ...waTpl, f: { ...waTpl.f, [fld.k]: e.target.value } })} />
+                      ))}
+                      <textarea className="auto-input" rows={6} readOnly value={waTpl.make(waTpl.f)} />
+                      <div className="auto-actions">
+                        <button className="chip" disabled={waBusy} onClick={async () => {
+                          const msg = waTpl.make(waTpl.f);
+                          const phone = prompt("Send to WhatsApp number (with country code, e.g. 919876543210):");
+                          if (!phone) return;
+                          setWaBusy(true);
+                          try {
+                            const res = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ to: phone, message: msg }), signal: AbortSignal.timeout(30000) });
+                            const d = await res.json();
+                            if (d.waLink) { window.open(d.waLink, "_blank"); showToast("WhatsApp API not configured — opened WhatsApp chat instead"); }
+                            else if (res.ok) { showToast("✅ WhatsApp message sent!"); trackUsage("whatsapp"); }
+                            else throw new Error(d.error || "send failed");
+                          } catch (err) {
+                            window.open(`https://wa.me/${phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(msg)}`, "_blank");
+                            showToast("Opened WhatsApp — tap send to deliver");
+                          } finally { setWaBusy(false); }
+                        }}>{waBusy ? "Sending…" : "🟢 Send via WhatsApp"}</button>
+                        <button className="chip" onClick={() => { navigator.clipboard?.writeText(waTpl.make(waTpl.f)); showToast("📋 copied — paste it into WhatsApp"); }}>📋 Copy message</button>
+                        <button className="chip" onClick={() => { const to = prompt("Email it to:", creds.gmailUser || ""); if (to) runAutomation("gmail_send", { to, subject: waTpl.title, body: waTpl.make(waTpl.f) }); }}>✉️ Email it</button>
+                      </div>
+                      <p className="auto-note">💡 Need the real WhatsApp Business API for automatic sends? The app owner configures 3 server variables — see the guide above.</p>
+                    </div>
+                  )}
+                </div>
+                <div className="auto-card connect-ai">
+                  <div className="auto-card-title">🤖 Connect anything with AI help</div>
+                  <p className="auto-note">Not sure how to connect Gmail, GitHub, WhatsApp or any other app? Ask the assistant to walk you through it, or set it up for you.</p>
+                  <div className="auto-actions">
+                    <button className="chip" onClick={() => { setTab("chat"); send("Walk me through connecting Gmail, GitHub and WhatsApp to Arynox step by step — keep it simple."); }}>💬 Ask AI to connect</button>
+                  </div>
                 </div>
               </div>
               <div className="auto-cols">
@@ -1784,6 +2106,96 @@ export default function Home() {
           </div>
         )}
       </main>
+
+      {settingsOpen && (
+        <div className="modal" onClick={() => setSettingsOpen(false)}>
+          <div className="auth-modal settings-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="auth-head">
+              <span>⚙ Settings</span>
+              <button className="icon-btn" onClick={() => setSettingsOpen(false)}>✕</button>
+            </div>
+            <div className="auth-tabs">
+              <button className={settingsTab === "voice" ? "active" : ""} onClick={() => setSettingsTab("voice")}>🎙 Voice</button>
+              <button className={settingsTab === "usage" ? "active" : ""} onClick={() => { setSettingsTab("usage"); refreshUsage(); }}>📊 My usage</button>
+            </div>
+            {settingsTab === "voice" && (
+              <div className="settings-body">
+                <label className="settings-label">Voice provider</label>
+                <div className="voice-providers">
+                  {[{ id: "server", icon: "🔊", name: "Arynox voice", desc: "Premium cloud voice — works everywhere" }, { id: "browser", icon: "🌐", name: "Device voices", desc: "Free voices on this device (English, हिन्दी, मराठी)" }, { id: "voicebox", icon: "🎛", name: "Voicebox (my voices)", desc: "Use cloned / custom voices from the free Voicebox app" }].map((p) => (
+                    <button key={p.id} className={`voice-provider ${voiceSet.provider === p.id ? "on" : ""}`} onClick={() => { const nv = { ...voiceSet, provider: p.id }; setVoiceSet(nv); save(KEY.voice, nv); }}>
+                      <span>{p.icon}</span><b>{p.name}</b><em>{p.desc}</em>
+                    </button>
+                  ))}
+                </div>
+                {voiceSet.provider === "browser" && (
+                  <div className="settings-section">
+                    <label className="settings-label">Device voice</label>
+                    <select className="auto-input" value={voiceSet.browserVoice || ""} onChange={(e) => { const nv = { ...voiceSet, browserVoice: e.target.value }; setVoiceSet(nv); save(KEY.voice, nv); }}>
+                      <option value="">Auto (match language)</option>
+                      {(window.speechSynthesis?.getVoices() || []).map((v, i) => (
+                        <option key={i} value={v.voiceURI}>{v.name} ({v.lang})</option>
+                      ))}
+                    </select>
+                    <div className="settings-sliders">
+                      <label>Speed <input type="range" min="0.5" max="1.5" step="0.1" value={voiceSet.rate || 1} onChange={(e) => { const nv = { ...voiceSet, rate: Number(e.target.value) }; setVoiceSet(nv); save(KEY.voice, nv); }} /></label>
+                      <label>Pitch <input type="range" min="0.5" max="1.5" step="0.1" value={voiceSet.pitch || 1} onChange={(e) => { const nv = { ...voiceSet, pitch: Number(e.target.value) }; setVoiceSet(nv); save(KEY.voice, nv); }} /></label>
+                    </div>
+                    <button className="chip" onClick={() => speakBrowser("Hello! This is how my voice sounds. नमस्कार! मी मराठीत बोलू शकतो.", "en")}>▶ Test this voice</button>
+                  </div>
+                )}
+                {voiceSet.provider === "voicebox" && (
+                  <div className="settings-section">
+                    <label className="settings-label">Voicebox app URL</label>
+                    <input className="auto-input" value={voiceSet.vbUrl || "http://127.0.0.1:17493"} onChange={(e) => { const nv = { ...voiceSet, vbUrl: e.target.value }; setVoiceSet(nv); save(KEY.voice, nv); }} />
+                    <button className="chip" disabled={vbTesting} onClick={testVoicebox}>{vbTesting ? "Testing…" : "🔌 Test connection"}</button>
+                    {vbProfiles && vbProfiles.length > 0 && (
+                      <>
+                        <label className="settings-label">Your voice</label>
+                        <select className="auto-input" value={voiceSet.vbProfile || ""} onChange={(e) => { const nv = { ...voiceSet, vbProfile: e.target.value }; setVoiceSet(nv); save(KEY.voice, nv); }}>
+                          <option value="">Default voice</option>
+                          {vbProfiles.map((p, i) => (
+                            <option key={i} value={p.id || p.name || ""}>{(p.name || p.id || "Voice " + (i + 1))}</option>
+                          ))}
+                        </select>
+                      </>
+                    )}
+                    <p className="auto-note">🎛 Voicebox is a free open-source app (voicebox.sh). Install it on your PC, clone your voice with a few seconds of audio, and Arynox will speak in that voice. Make sure Voicebox is running before chatting.</p>
+                  </div>
+                )}
+                {voiceSet.provider !== "voicebox" && (
+                  <p className="auto-note">Tip: to use <b>your own cloned voice</b>, pick the Voicebox provider and install the free open-source app from voicebox.sh — clone any voice in seconds.</p>
+                )}
+              </div>
+            )}
+            {settingsTab === "usage" && (
+              <div className="settings-body">
+                {!user?.token ? (
+                  <div className="usage-empty">
+                    <p>📊 Your personal usage dashboard is saved to your account.</p>
+                    <button className="send-btn" style={{ width: "100%" }} onClick={() => { setSettingsOpen(false); setAuthOpen(true); }}>Sign in to see it</button>
+                  </div>
+                ) : usage ? (
+                  <>
+                    <div className="usage-grid">
+                      {[["chat", "💬", "Chat messages"], ["images", "🖼️", "Images"], ["code", "⚙️", "Code runs"], ["live_vision", "👁", "Live vision"], ["whatsapp", "🟢", "WhatsApp"], ["email", "✉️", "Emails"], ["github", "🐙", "GitHub"], ["web", "🔎", "Web searches"]].map(([k, icon, label]) => (
+                        <div className="usage-tile" key={k}>
+                          <span>{icon}</span>
+                          <b>{usage.usage?.[k] || 0}</b>
+                          <em>{label}</em>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="auto-note">All-time totals for your account{usage.today ? ` · today: ${new Date().toISOString().slice(0, 10)}` : ""}. WhatsApp messages count when you send via the ready-made templates.</p>
+                  </>
+                ) : (
+                  <p className="auto-note">Loading your usage…</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {authOpen && (
         <div className="modal" onClick={() => setAuthOpen(false)}>

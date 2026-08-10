@@ -1,4 +1,4 @@
-const CACHE = "arynox-v2";
+const CACHE = "arynox-v3";
 const SHELL = ["/", "/app", "/manifest.webmanifest", "/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
