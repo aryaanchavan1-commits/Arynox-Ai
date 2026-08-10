@@ -10,7 +10,7 @@ import { classify } from "@/lib/intent";
 import { sb } from "@/lib/supabase-client";
 import { BASE_INR, COUNTRY_CURRENCY, CURRENCIES, detectRegion, getRates, priceFor } from "@/lib/currency";
 
-const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos", code: "arynox_code_msgs", voice: "arynox_voice", engine: "arynox_engine", olUrl: "arynox_ol_url" };
+const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos", code: "arynox_code_msgs", voice: "arynox_voice" };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
@@ -164,13 +164,14 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("voice");
   const [voiceSet, setVoiceSet] = useState(() => load(KEY.voice, { provider: "server", rate: 1, pitch: 1, browserVoice: "", sarvamVoice: "kavya" }));
-  const [liveEngine, setLiveEngine] = useState(() => load(KEY.engine, "local"));
-  const [olUrl, setOlUrl] = useState(() => load(KEY.olUrl, "ws://127.0.0.1:8787/live"));
-  const [olConnected, setOlConnected] = useState(false);
-  const olWsRef = useRef(null);
-  const olAccRef = useRef("");
-  const olQRef = useRef("");
-  const olWarnAtRef = useRef(0);
+  const [speaking, setSpeaking] = useState(false);
+  const [dashFps, setDashFps] = useState(0);
+  const [sessionAsks, setSessionAsks] = useState(0);
+  const [sessionAlerts, setSessionAlerts] = useState(0);
+  const fpsRef = useRef(0);
+  const lastDetectAtRef = useRef(0);
+  const lastAlertRef = useRef("");
+  const deviceWatchRef = useRef(false);
   const [usage, setUsage] = useState(null);
   const [waTpl, setWaTpl] = useState(null);
   const [waBusy, setWaBusy] = useState(false);
@@ -566,8 +567,9 @@ export default function Home() {
       if (pick) { u.voice = pick; u.lang = pick.lang; }
       u.rate = Number(voiceSet.rate) || 1;
       u.pitch = Number(voiceSet.pitch) || 1;
-      u.onend = () => resolve(true);
-      u.onerror = () => resolve(false);
+      u.onstart = () => setSpeaking(true);
+      u.onend = () => { setSpeaking(false); resolve(true); };
+      u.onerror = () => { setSpeaking(false); resolve(false); };
       window.speechSynthesis.speak(u);
     } catch { resolve(false); }
   });
@@ -580,13 +582,16 @@ export default function Home() {
     }
     try {
       audioRef.current?.pause();
-      const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: lang || "en", speaker: voiceSet.sarvamVoice || "meera" }), signal: AbortSignal.timeout(30000) });
-      if (!res.ok) return;
+      setSpeaking(true);
+      const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: lang || "en", speaker: voiceSet.sarvamVoice || "kavya" }), signal: AbortSignal.timeout(30000) });
+      if (!res.ok) { setSpeaking(false); return; }
       const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: res.headers.get("content-type") || "audio/mpeg" }));
       const a = new Audio(url);
       audioRef.current = a;
+      a.onended = () => setSpeaking(false);
+      a.onerror = () => setSpeaking(false);
       await a.play();
-    } catch {}
+    } catch { setSpeaking(false); }
   };
 
   const trackUsage = (action) => {
@@ -1160,8 +1165,20 @@ export default function Home() {
         .catch(() => { aiVisionRef.current = false; setAiFailed(true); });
       detectTimer.current = setInterval(detectFrame, 900);
       detectFrame();
-      if (liveEngine === "openlive" && olWsRef.current?.readyState === 1) olWsRef.current.send(JSON.stringify({ t: "control", action: "camera_on" }));
+      if (!deviceWatchRef.current) {
+        deviceWatchRef.current = true;
+        navigator.mediaDevices?.addEventListener("devicechange", onDevicesChanged);
+      }
     } catch { showToast("👁 camera blocked — allow access in the browser"); }
+  };
+
+  const onDevicesChanged = async () => {
+    const list = await loadCameras();
+    showToast(`📷 camera devices changed — ${list.length} available`);
+    if (streamRef.current && activeCamId && !list.some((d) => d.id === activeCamId)) {
+      const first = list[0];
+      if (first) await switchCamera(first.id);
+    }
   };
 
   const switchCamera = async (deviceId) => {
@@ -1194,125 +1211,37 @@ export default function Home() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
-    if (liveEngine === "openlive" && olWsRef.current?.readyState === 1) olWsRef.current.send(JSON.stringify({ t: "control", action: "camera_off" }));
+    if (deviceWatchRef.current) {
+      deviceWatchRef.current = false;
+      navigator.mediaDevices?.removeEventListener("devicechange", onDevicesChanged);
+    }
     const ov = overlayRef.current;
     if (ov) ov.getContext("2d").clearRect(0, 0, ov.width, ov.height);
   };
 
-  const olCapture = (maxW = 1280) => {
+  const captureFrame = (maxW = 1600) => {
     const v = videoRef.current;
     if (!v?.videoWidth) return null;
     const scale = Math.min(1, maxW / v.videoWidth);
     const c = document.createElement("canvas");
-    c.width = Math.round(v.videoWidth * scale);
-    c.height = Math.round(v.videoHeight * scale);
+    c.width = Math.max(1, Math.round(v.videoWidth * scale));
+    c.height = Math.max(1, Math.round(v.videoHeight * scale));
     c.getContext("2d").drawImage(v, 0, 0);
-    return c.toDataURL("image/jpeg", 0.8).split(",")[1];
+    return c.toDataURL("image/jpeg", 0.8);
   };
 
-  const olFinish = () => {
-    const reply = olAccRef.current.trim() || "(no answer)";
-    olAccRef.current = "";
-    const text = reply.replace(/[#*`]/g, "").slice(0, 700);
-    setLiveReplies((prev) => [...prev.slice(-9), { q: olQRef.current, a: text, t: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
-    speak(text, "en");
-    trackUsage("live_vision");
-    olQRef.current = "";
-    if (liveBusyRef.current) { liveBusyRef.current = false; setLiveBusy(false); }
-  };
-
-  const olFail = (msg) => {
-    olAccRef.current = "";
-    setLiveReplies((prev) => [...prev.slice(-9), { q: olQRef.current, a: "⚠ " + String(msg).slice(0, 200), t: "" }]);
-    olQRef.current = "";
-    if (liveBusyRef.current) { liveBusyRef.current = false; setLiveBusy(false); }
-  };
-
-  const olConnect = () => {
-    const url = olUrl.trim();
-    if (!url) { showToast("🔗 enter the OpenLive agent URL first"); return; }
-    if (olWsRef.current && olWsRef.current.readyState <= 1) return;
-    try {
-      const ws = new WebSocket(url);
-      olWsRef.current = ws;
-      ws.onopen = () => {
-        setOlConnected(true);
-        ws.send(JSON.stringify({ t: "bind", agentId: null }));
-        if (camOn) ws.send(JSON.stringify({ t: "control", action: "camera_on" }));
-        showToast("🔗 OpenLive engine connected");
-      };
-      ws.onmessage = (e) => {
-        if (typeof e.data !== "string") return;
-        let m;
-        try { m = JSON.parse(e.data); } catch { return; }
-        if (m.t === "need_frame") {
-          ws.send(JSON.stringify({ t: "frame_response", reqId: m.reqId }));
-          const jpeg = olCapture(1280);
-          if (jpeg) {
-            const bin = Uint8Array.from(atob(jpeg), (ch) => ch.charCodeAt(0));
-            const out = new Uint8Array(bin.length + 1);
-            out[0] = 0x02;
-            out.set(bin, 1);
-            ws.send(out);
-          }
-        } else if (m.t === "sse") {
-          const ev = m.event || {};
-          if (ev.type === "text_delta") olAccRef.current += ev.text;
-          else if (ev.type === "say") speak(ev.text, "en");
-          else if (ev.type === "done") olFinish();
-          else if (ev.type === "error") olFail(ev.message);
-        } else if (m.t === "error") {
-          olFail(m.message);
-        }
-      };
-      ws.onclose = () => {
-        setOlConnected(false);
-        if (liveBusyRef.current) olFail("OpenLive engine disconnected");
-      };
-      ws.onerror = () => { try { ws.close(); } catch { } showToast("🔗 cannot reach OpenLive — start it with: cd openlive && pnpm install && pnpm dev"); };
-    } catch { showToast("🔗 invalid WebSocket URL"); }
-  };
-
-  const olTurn = (text) => {
-    const ws = olWsRef.current;
-    if (!ws || ws.readyState !== 1) return false;
-    olQRef.current = text;
-    olAccRef.current = "";
-    const jpeg = olCapture(1024);
-    ws.send(JSON.stringify({ t: "user_text", text, frames: jpeg ? [{ data: jpeg, mime: "image/jpeg", source: "camera" }] : undefined }));
-    return true;
-  };
-
-  const setEngine = (eng) => { setLiveEngine(eng); save(KEY.engine, eng); };
+  const pushReply = (text, extra) => setLiveReplies((prev) => [...prev.slice(-9), { q: text, a: extra.a, t: extra.t || "" }]);
 
   const askLive = async (q) => {
     const v = videoRef.current;
     if (!v?.videoWidth) { showToast("👁 start the camera first"); return; }
     const text = String(q ?? liveAsk).trim();
     if (!text || liveBusyRef.current) return;
-    if (liveEngine === "openlive") {
-      const ws = olWsRef.current;
-      if (!ws || ws.readyState !== 1) {
-        if (Date.now() - olWarnAtRef.current > 8000) {
-          olWarnAtRef.current = Date.now();
-          showToast("🔗 OpenLive engine not connected — connect in ⚙ Settings or switch to Local");
-        }
-        return;
-      }
-    }
     liveBusyRef.current = true;
     setLiveBusy(true);
     setLiveAsk("");
-    const c = document.createElement("canvas");
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext("2d").drawImage(v, 0, 0);
-    const image = c.toDataURL("image/jpeg", 0.72);
-    if (liveEngine === "openlive") {
-      olTurn(text, image);
-      return;
-    }
     try {
-      const image = c.toDataURL("image/jpeg", 0.72);
+      const image = captureFrame(1600);
       const history = liveReplies.slice(-6).flatMap((r) => [{ role: "user", content: r.q }, { role: "assistant", content: r.a }]);
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -1323,13 +1252,16 @@ export default function Home() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Live vision failed");
       const reply = String(d.reply || "").replace(/[#*`]/g, "").slice(0, 700);
-      setLiveReplies((prev) => [...prev.slice(-9), { q: text, a: reply, t: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
+      pushReply(text, { a: reply, t: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
       trackUsage("live_vision");
+      setSessionAsks((n) => n + 1);
       speak(reply, d.lang || "en");
     } catch (err) {
-      setLiveReplies((prev) => [...prev.slice(-9), { q: text, a: "⚠ " + String(err?.message || err).slice(0, 200), t: "" }]);
+      pushReply(text, { a: "⚠ " + String(err?.message || err).slice(0, 200), t: "" });
     } finally { liveBusyRef.current = false; setLiveBusy(false); }
   };
+
+  const lookCloser = () => askLive("Look at this scene very closely. Describe every important detail in 2-3 short sentences.");
 
   const startWatchTimer = () => {
     clearInterval(watchTimer.current);
@@ -1372,6 +1304,10 @@ export default function Home() {
 
   const detectFrame = async () => {
     if (detecting || !camOn || detectPaused) return;
+    const now = performance.now();
+    if (lastDetectAtRef.current) fpsRef.current = 1000 / (now - lastDetectAtRef.current);
+    lastDetectAtRef.current = now;
+    setDashFps(fpsRef.current);
     const v = videoRef.current;
     if (!v || !v.videoWidth) return;
     setDetecting(true);
@@ -1403,6 +1339,11 @@ export default function Home() {
           const proxRatio = (top.box[3] || 0) / vh;
           const dist = proxRatio > 0.55 ? "near" : proxRatio > 0.3 ? "medium" : "far";
           setVehicleAlert({ name: top.name, score: Math.round(top.score * 100), dist });
+          const alertKey = top.name + "|" + dist;
+          if (lastAlertRef.current !== alertKey) {
+            lastAlertRef.current = alertKey;
+            setSessionAlerts((n) => n + 1);
+          }
           if (voiceAlerts && Date.now() - lastVehicleSpeak.current > 12000) {
             lastVehicleSpeak.current = Date.now();
             const dn = VEHICLE_LABEL[top.name] || top.name;
@@ -1922,10 +1863,6 @@ export default function Home() {
                 {kioskOn ? <button className="chip cam-off" onClick={kioskStop}>🧑🤝🧑 Stop visitor mode</button> : <button className="chip cam-on" onClick={kioskStart}>🧑🤝🧑 Visitor mode</button>}
                 {camOn ? <button className="chip cam-off" onClick={stopCamera}>■ Stop</button> : <button className="chip cam-on" onClick={startCamera}>● Start seeing</button>}
               </div>
-              <div className="engine-row">
-                <button className={`chip ${liveEngine === "local" ? "engine-on" : ""}`} onClick={() => setEngine("local")}>🧠 Local engine</button>
-                <button className={`chip ${liveEngine === "openlive" ? "engine-on" : ""}`} onClick={() => setEngine("openlive")}>⚡ OpenLive {olConnected ? "· on" : ""}</button>
-              </div>
             </header>
             <div className="cam-stage">
               <div className="cam-frame">
@@ -1942,7 +1879,7 @@ export default function Home() {
                   <div className="cam-placeholder">
                     <span>👁</span>
                     <p className="cam-place-title">See the world live</p>
-                    <p>Press <b>Start seeing</b> and I will detect <b>people, vehicles, animals, objects and documents</b> in real time — on your device. Ask questions, get spoken answers and live web data.</p>
+                    <p>Press <b>Start seeing</b> and I will detect <b>people, vehicles, animals, objects and documents</b> in real time — on your device. Watch a live dashboard, ask questions, get spoken answers (Sarvam AI voice) and live web data. Works with every camera — plug any in and detection keeps running.</p>
                     <button className="send-btn cam-big" onClick={startCamera}>● Start seeing</button>
                   </div>
                 )}
@@ -1964,6 +1901,20 @@ export default function Home() {
               </div>
               <div className="detect-panel">
                 <div className="detect-title">{camOn ? "I can see:" : "Detection is off"}</div>
+                {camOn && (
+                  <div className="dash-grid">
+                    <div className="dash-cell"><i>🎥</i><b>{(camDevices.find((d) => d.id === activeCamId)?.label || "Camera").replace(/\s*\([^)]*\)\s*$/g, "")}</b><em>{videoRef.current?.videoWidth || 0}×{videoRef.current?.videoHeight || 0} · {camDevices.length} cam{camDevices.length === 1 ? "" : "s"}</em></div>
+                    <div className="dash-cell"><i>⚡</i><b>{dashFps ? dashFps.toFixed(1) + "/s" : "—"}</b><em>scan speed</em></div>
+                    <div className="dash-cell"><i>🧍</i><b>{boxes.filter((b) => b.name === "person").length}</b><em>human</em></div>
+                    <div className="dash-cell"><i>🚗</i><b>{boxes.filter((b) => VEHICLES.includes(b.name)).length}</b><em>vehicle</em></div>
+                    <div className="dash-cell"><i>📄</i><b>{docs.length}</b><em>document</em></div>
+                    <div className="dash-cell"><i>🔸</i><b>{objects.filter((o) => o.name !== "person" && !VEHICLES.includes(o.name)).reduce((s, o) => s + o.count, 0)}</b><em>objects</em></div>
+                    <div className="dash-cell"><i>🗣</i><b className={speaking ? "dash-live" : ""}>{speaking ? "Speaking…" : "Ready"}</b><em>{voiceSet.provider === "browser" ? "device voice" : "Sarvam AI"}</em></div>
+                    <div className="dash-cell"><i>👀</i><b className={watchMode ? "dash-live" : ""}>{watchMode ? `${watchSecs}s watch` : "Off"}</b><em>auto vision</em></div>
+                    <div className="dash-cell"><i>🧠</i><b>Arynox AI</b><em>{aiVision ? "on-device + cloud" : "cloud brain"}</em></div>
+                    <div className="dash-cell"><i>📊</i><b>{sessionAsks} · {sessionAlerts}</b><em>asks · alerts</em></div>
+                  </div>
+                )}
                 {camOn && !aiVision && !aiFailed && <div className="detect-empty">Loading on-device AI…</div>}
                 {camOn && aiFailed && <div className="detect-empty">Offline model unavailable — using cloud vision (every ~3s).</div>}
                 {camOn && objects.length === 0 && aiVision && <div className="detect-empty">{detecting ? "Looking…" : "Looking around…"}</div>}
@@ -2004,6 +1955,7 @@ export default function Home() {
                     </div>
                     <div className="live-ask-hints">
                       <button className="chip" disabled={liveBusy} onClick={() => askLive("What am I looking at? Describe it in 2 short sentences.")}>👀 What do you see?</button>
+                      <button className="chip" disabled={liveBusy} onClick={lookCloser}>🔍 Look closer</button>
                       <button className="chip" disabled={liveBusy} onClick={() => askLive("Look at this, check the web for the latest information about it, and tell me the newest details.")}>🔎 See + search web</button>
                       <button className="chip" disabled={liveBusy} onClick={toggleWatch}>{watchMode ? "⏸ Stop watching" : `👀 Watch mode (${watchSecs}s)`}</button>
                     </div>
@@ -2234,7 +2186,6 @@ export default function Home() {
             </div>
             <div className="auth-tabs">
               <button className={settingsTab === "voice" ? "active" : ""} onClick={() => setSettingsTab("voice")}>🎙 Voice</button>
-              <button className={settingsTab === "live" ? "active" : ""} onClick={() => setSettingsTab("live")}>⚡ Live</button>
               <button className={settingsTab === "usage" ? "active" : ""} onClick={() => { setSettingsTab("usage"); refreshUsage(); }}>📊 My usage</button>
             </div>
             {settingsTab === "voice" && (
@@ -2274,29 +2225,6 @@ export default function Home() {
                       <label>Pitch <input type="range" min="0.5" max="1.5" step="0.1" value={voiceSet.pitch || 1} onChange={(e) => { const nv = { ...voiceSet, pitch: Number(e.target.value) }; setVoiceSet(nv); save(KEY.voice, nv); }} /></label>
                     </div>
                     <button className="chip" onClick={() => speakBrowser("Hello! This is how my voice sounds. नमस्कार! मी मराठीत बोलू शकतो.", "en")}>▶ Test this voice</button>
-                  </div>
-                )}
-              </div>
-            )}
-            {settingsTab === "live" && (
-              <div className="settings-body">
-                <label className="settings-label">Live vision engine</label>
-                <div className="voice-providers">
-                  <button className={`voice-provider ${liveEngine === "local" ? "on" : ""}`} onClick={() => setEngine("local")}>
-                    <span>🧠</span><b>Local engine</b><em>On-device detection (people, vehicles, documents) + cloud vision. Works on every device — no setup.</em>
-                  </button>
-                  <button className={`voice-provider ${liveEngine === "openlive" ? "on" : ""}`} onClick={() => setEngine("openlive")}>
-                    <span>⚡</span><b>OpenLive engine</b><em>Streams the live camera to the OpenLive AI agent on this PC — instant on-device vision + spoken answers. Works on laptop; phone connects over same Wi-Fi.</em>
-                  </button>
-                </div>
-                {liveEngine === "openlive" && (
-                  <div className="settings-section">
-                    <label className="settings-label">OpenLive agent URL</label>
-                    <div className="live-ask-row">
-                      <input className="live-ask-input" value={olUrl} onChange={(e) => { setOlUrl(e.target.value); save(KEY.olUrl, e.target.value); }} placeholder="ws://127.0.0.1:8787/live" />
-                      <button className="chip" onClick={olConnect} disabled={olConnected || !olUrl.trim()}>{olConnected ? "✓ Connected" : "Connect"}</button>
-                    </div>
-                    <p className="auto-note">⚡ OpenLive is a free open-source on-device voice + vision agent. Run it on this PC: <b>cd openlive &amp;&amp; pnpm install &amp;&amp; pnpm dev</b>, then press Connect. Camera frames go straight to OpenLive on your machine — nothing leaves your device. Ask, watch, detect — all instant and private.</p>
                   </div>
                 )}
               </div>
