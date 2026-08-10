@@ -1,6 +1,7 @@
 import { runAgent } from "@/lib/agent";
-import { ownerFromRequest } from "@/lib/supabase";
+import { ownerFromRequest, getUserFromToken } from "@/lib/supabase";
 import { writeFile, snapshot, tree } from "@/lib/workspace";
+import { isBlocked, trackUser } from "@/lib/access";
 
 export const maxDuration = 90;
 export const runtime = "nodejs";
@@ -8,6 +9,12 @@ export const runtime = "nodejs";
 export async function POST(req) {
   try {
     const owner = await ownerFromRequest(req);
+    const auth = req.headers.get("authorization") || "";
+    const me = auth.startsWith("Bearer ") ? await getUserFromToken(auth.slice(7).trim()) : null;
+    if (me?.email && isBlocked(me.email)) {
+      return Response.json({ error: "Your access is blocked. Contact the app owner." }, { status: 403 });
+    }
+    if (me?.email) trackUser(me.email, me.name);
     const body = await req.json();
     const messages = Array.isArray(body?.messages) ? body.messages.filter((m) => m && m.role && typeof m.content === "string") : [];
     const files = Array.isArray(body?.files) ? body.files.filter((f) => f && f.name) : [];

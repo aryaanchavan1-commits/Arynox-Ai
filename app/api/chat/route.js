@@ -1,6 +1,7 @@
 import { groqChat, extractMemory, lastUserLang } from "@/lib/groq";
 import { runAgent } from "@/lib/agent";
-import { ownerFromRequest } from "@/lib/supabase";
+import { ownerFromRequest, getUserFromToken } from "@/lib/supabase";
+import { isBlocked, trackUser } from "@/lib/access";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -46,6 +47,12 @@ export async function POST(req) {
 
     const lang = lastUserLang(messages);
     const owner = await ownerFromRequest(req);
+    const auth = req.headers.get("authorization") || "";
+    const me = auth.startsWith("Bearer ") ? await getUserFromToken(auth.slice(7).trim()) : null;
+    if (me?.email && isBlocked(me.email)) {
+      return Response.json({ error: "Your access is blocked. Contact the app owner." }, { status: 403 });
+    }
+    if (me?.email) trackUser(me.email, me.name);
 
     const agentParams = { messages, memory, creds: body.creds || {}, owner, business };
 

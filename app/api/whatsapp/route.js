@@ -1,18 +1,18 @@
 import { groqChat } from "@/lib/groq";
+import { cfg } from "@/lib/config";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
 
-const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || "";
-const TOKEN = process.env.WHATSAPP_TOKEN || "";
-const PHONE_ID = process.env.WHATSAPP_PHONE_ID || "";
+const waCfg = () => ({ verify: cfg("WHATSAPP_VERIFY_TOKEN"), token: cfg("WHATSAPP_TOKEN"), phone: cfg("WHATSAPP_PHONE_ID") });
 
 export async function GET(req) {
   const url = new URL(req.url);
   const mode = url.searchParams.get("hub.mode");
   const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
-  if (mode === "subscribe" && token && VERIFY_TOKEN && token === VERIFY_TOKEN) {
+  const { verify } = waCfg();
+  if (mode === "subscribe" && token && verify && token === verify) {
     return new Response(challenge, { status: 200 });
   }
   return new Response("verification failed", { status: 403 });
@@ -28,7 +28,8 @@ export async function POST(req) {
   const message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
   const text = message?.text?.body;
   const from = message?.from;
-  if (text && from && TOKEN && PHONE_ID) {
+  const { token, phone } = waCfg();
+  if (text && from && token && phone) {
     void handle(text, from);
   }
   return new Response("ok");
@@ -49,9 +50,10 @@ async function handle(text, from) {
 }
 
 async function send(to, message) {
-  const res = await fetch(`https://graph.facebook.com/v21.0/${PHONE_ID}/messages`, {
+  const { token, phone } = waCfg();
+  const res = await fetch(`https://graph.facebook.com/v21.0/${phone}/messages`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: String(message).slice(0, 1600) } }),
     signal: AbortSignal.timeout(30000),
   });
