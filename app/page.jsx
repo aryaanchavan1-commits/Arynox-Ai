@@ -3,6 +3,8 @@ export const metadata = {
   description: "Arynox AI is Maharashtra's premium AI workspace — trilingual chat, voice, vision, an AI coding studio with live website preview, Excel/PDF/Word files, images, deep research and automations. Built by Arynox Tech, Ratnagiri.",
 };
 
+import Pricing from "./Pricing";
+
 const FEATURES = [
   { icon: "💬", title: "Normal chat", desc: "Speak English, हिन्दी or मराठी — Arynox answers in your language, remembers context across chats, and reads your files." },
   { icon: "💻", title: "Coding studio + agent", desc: "Just type \"build me a website\" and it is built instantly in Code — files, folder tree, run console, live preview, and a coding agent that edits and fixes your project on demand." },
@@ -23,7 +25,7 @@ const STEPS = [
 ];
 
 const FAQS = [
-  { q: "Is Arynox AI really free right now?", a: "Yes — while in testing, everything is free. A Pro tier (₹299/month, on waitlist) is coming with higher limits, priority speed and bigger workspaces." },
+  { q: "Is Arynox AI really free right now?", a: "Yes — while in testing, everything is free. A Pro tier (₹299/month in India — shown in your local currency automatically) is coming with higher limits, priority speed and bigger workspaces." },
   { q: "Does it understand Marathi and Hindi?", a: "Yes. Chat, voice input and replies all work in English, Hindi and Marathi, and the business concierge mode speaks all three naturally." },
   { q: "Can it really build websites and apps?", a: "Yes — just type \"build me a calculator\" or \"make a website for my hotel\" in chat and the build happens automatically in the Code section: complete multi-file projects with a folder tree, run console and live preview." },
   { q: "What is live detection and visitor mode?", a: "The Live section uses real-time on-device camera AI to see people, objects and documents. Turn on Visitor mode and it greets each person out loud, asks their name, saves what they are looking for, and guides them — like a smart shop assistant on your phone." },
@@ -118,35 +120,8 @@ export default function Landing() {
         <section className="landing-section" id="pricing">
           <span className="landing-overline">Pricing</span>
           <h2>Simple pricing</h2>
-          <p className="landing-section-sub">Free while in testing — pay only when you love it.</p>
-          <div className="landing-plans">
-            <div className="landing-plan">
-              <h3>Free</h3>
-              <div className="landing-price">₹0<span>/month</span></div>
-              <ul>
-                <li>Trilingual chat with memory</li>
-                <li>Voice, vision & camera</li>
-                <li>AI coding studio with live preview & a coding agent</li>
-                <li>Excel, PDF & Word files</li>
-                <li>Live web search with cited sources</li>
-                <li>Daily usage limits</li>
-              </ul>
-              <a className="landing-btn" href="/app">Start free</a>
-            </div>
-            <div className="landing-plan featured">
-              <div className="landing-plan-tag">Granted by the owner</div>
-              <h3>Pro</h3>
-              <div className="landing-price">₹299<span>/month</span></div>
-              <ul>
-                <li>Everything in Free, unlimited</li>
-                <li>Priority speed & bigger workspaces</li>
-                <li>Image generation, higher limits</li>
-                <li>Automations & MCP servers</li>
-                <li>Early-access features</li>
-              </ul>
-              <a className="landing-btn ghost" href="/app">Ask the owner to unlock 💎</a>
-            </div>
-          </div>
+          <p className="landing-section-sub">Free while in testing — pay only when you love it. Prices shown in your region's currency automatically.</p>
+          <Pricing />
         </section>
 
         <section className="landing-section landing-alt" id="faq">

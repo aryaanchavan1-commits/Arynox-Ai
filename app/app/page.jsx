@@ -8,6 +8,7 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import JSZip from "jszip";
 import { classify } from "@/lib/intent";
 import { sb } from "@/lib/supabase-client";
+import { BASE_INR, COUNTRY_CURRENCY, CURRENCIES, detectRegion, getRates, priceFor } from "@/lib/currency";
 
 const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos", code: "arynox_code_msgs", voice: "arynox_voice" };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -159,11 +160,10 @@ export default function Home() {
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveReplies, setLiveReplies] = useState([]);
   const [watchMode, setWatchMode] = useState(false);
+  const [watchSecs, setWatchSecs] = useState(30);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("voice");
-  const [voiceSet, setVoiceSet] = useState(() => load(KEY.voice, { provider: "server", rate: 1, pitch: 1, browserVoice: "", vbUrl: "http://127.0.0.1:17493", vbProfile: "" }));
-  const [vbProfiles, setVbProfiles] = useState(null);
-  const [vbTesting, setVbTesting] = useState(false);
+  const [voiceSet, setVoiceSet] = useState(() => load(KEY.voice, { provider: "server", rate: 1, pitch: 1, browserVoice: "", sarvamVoice: "kavya" }));
   const [usage, setUsage] = useState(null);
   const [waTpl, setWaTpl] = useState(null);
   const [waBusy, setWaBusy] = useState(false);
@@ -173,6 +173,34 @@ export default function Home() {
   const [faceMsg, setFaceMsg] = useState("");
 
   const [me, setMe] = useState({ email: "", isAdmin: false, premium: false, premiumUntil: 0 });
+  const [pxRegion, setPxRegion] = useState(null);
+  const [pxRates, setPxRates] = useState(null);
+  const [pxCur, setPxCur] = useState("auto");
+
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      const [r, fx] = await Promise.all([detectRegion(), getRates()]);
+      if (dead) return;
+      setPxRegion(r);
+      setPxRates(fx);
+      try {
+        const saved = localStorage.getItem("arynox_currency");
+        if (saved) setPxCur(saved);
+      } catch {}
+    })();
+    return () => { dead = true; };
+  }, []);
+
+  const pxCode = pxCur !== "auto" ? pxCur : COUNTRY_CURRENCY[pxRegion?.country] || "USD";
+  const pxInfo = useMemo(() => {
+    const cur = CURRENCIES.find((c) => c.code === pxCode) || CURRENCIES[1];
+    return { cur, pro: priceFor(pxCode, pxRates) };
+  }, [pxCode, pxRates]);
+  const setPxCurSaved = (c) => {
+    setPxCur(c);
+    try { localStorage.setItem("arynox_currency", c); } catch {}
+  };
   const [adminToken, setAdminToken] = useState(() => load("arynox_admin", null));
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminUser, setAdminUser] = useState("");
@@ -537,55 +565,17 @@ export default function Home() {
     } catch { resolve(false); }
   });
 
-  const speakVoicebox = async (text, lang) => {
-    const url = String(voiceSet.vbUrl || "http://127.0.0.1:17493").replace(/\/+$/, "");
-    try {
-      const res = await fetch(`${url}/speak`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: String(text).slice(0, 2000), profile: voiceSet.vbProfile || undefined, language: lang || undefined }),
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) return false;
-      const blob = await res.blob();
-      if (!blob.size) return false;
-      audioRef.current?.pause();
-      const a = new Audio(URL.createObjectURL(blob));
-      audioRef.current = a;
-      await a.play();
-      return true;
-    } catch { return false; }
-  };
-
-  const testVoicebox = async () => {
-    setVbTesting(true);
-    const url = String(voiceSet.vbUrl || "http://127.0.0.1:17493").replace(/\/+$/, "");
-    try {
-      const res = await fetch(`${url}/profiles`, { signal: AbortSignal.timeout(5000) });
-      if (!res.ok) throw new Error("status " + res.status);
-      const data = await res.json();
-      const profiles = Array.isArray(data) ? data : data.profiles || [];
-      setVbProfiles(profiles);
-      showToast(`✅ Voicebox connected — ${profiles.length} voice${profiles.length === 1 ? "" : "s"} found`);
-    } catch {
-      setVbProfiles([]);
-      showToast("❌ Voicebox not reachable — download & run the free app from voicebox.sh first");
-    } finally { setVbTesting(false); }
-  };
-
   const speak = async (text, lang) => {
     if (!text) return;
     const provider = voiceSet.provider || "server";
-    if (provider === "voicebox") {
-      if (await speakVoicebox(text, lang).catch(() => false)) return;
-    } else if (provider === "browser") {
+    if (provider === "browser") {
       if (await speakBrowser(text, lang).catch(() => false)) return;
     }
     try {
       audioRef.current?.pause();
-      const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: lang || "en" }), signal: AbortSignal.timeout(30000) });
+      const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang: lang || "en", speaker: voiceSet.sarvamVoice || "meera" }), signal: AbortSignal.timeout(30000) });
       if (!res.ok) return;
-      const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "audio/mpeg" }));
+      const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: res.headers.get("content-type") || "audio/mpeg" }));
       const a = new Audio(url);
       audioRef.current = a;
       await a.play();
@@ -1231,21 +1221,31 @@ export default function Home() {
     } finally { liveBusyRef.current = false; setLiveBusy(false); }
   };
 
+  const startWatchTimer = () => {
+    clearInterval(watchTimer.current);
+    watchTimer.current = setInterval(() => {
+      askLive("Keep watching. Is there anything new or important happening now? Answer in 1-2 short sentences.");
+    }, watchSecs * 1000);
+  };
+
   const toggleWatch = () => {
     const next = !watchMode;
     setWatchMode(next);
     if (next) {
-      showToast("👀 Watching mode on — I will look, think and speak every 30 seconds");
+      showToast(`👀 Watching mode on — I will look, think and speak every ${watchSecs} seconds`);
       askLive("You are my live eyes right now. Look at what is in front of me and tell me in 2 short sentences what is happening, and check the web for anything relevant to it right now.");
-      watchTimer.current = setInterval(() => {
-        askLive("Keep watching. Is there anything new or important happening now? Answer in 1-2 short sentences.");
-      }, 30000);
+      startWatchTimer();
     } else {
       clearInterval(watchTimer.current);
       watchTimer.current = null;
       showToast("Watching mode off");
     }
   };
+
+  useEffect(() => {
+    if (watchMode) startWatchTimer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchSecs]);
 
   const drawBoxes = (objs, docArr) => {
     const v = videoRef.current;
@@ -1684,7 +1684,9 @@ export default function Home() {
                   <input ref={attachRef} type="file" accept="image/*,audio/*,.pdf,.xlsx,.csv,.docx,.doc,.txt,.md,.json,.js,.ts,.py,.html,.css,.zip" hidden onChange={onPickAnyFile} />
                   <button className="tool-btn" title="Attach any file — photo, audio, PDF, Excel, Word, code…" onClick={() => attachRef.current?.click()}>📎</button>
                   <textarea rows={1} placeholder={genMode ? "Describe the image you want..." : "Ask anything — in English, हिन्दी or मराठी"}
-                    value={input} onChange={(e) => setInput(e.target.value)}
+                    value={input}
+                    onChange={(e) => { setInput(e.target.value); if (!e.target.value) e.target.style.height = "auto"; }}
+                    onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 150) + "px"; }}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }} />
                   <button className={`tool-btn mic ${recording ? "rec" : ""}`} title={recording ? "Stop" : "Talk"} onClick={recording ? stopRecord : startRecord}>{recording ? "◼" : "🎤"}</button>
                   <button className="send-btn" disabled={!input.trim() || busy} onClick={() => send()}>➤</button>
@@ -1803,7 +1805,8 @@ export default function Home() {
                     </select>
                   </>
                 )}
-                {camOn && <button className={`chip ${watchMode ? "cam-on" : ""}`} onClick={toggleWatch} title="Look, think and speak every 30 seconds">👀 <span className="cam-toggle-label">{watchMode ? "Watching…" : "Watch"}</span></button>}
+                {camOn && <button className={`chip ${watchMode ? "cam-on" : ""}`} onClick={toggleWatch} title={`Look, think and speak every ${watchSecs} seconds`}>👀 <span className="cam-toggle-label">{watchMode ? "Watching…" : "Watch"}</span></button>}
+                {camOn && <select className="watch-select" value={watchSecs} onChange={(e) => setWatchSecs(Number(e.target.value))} disabled={watchMode} title="How often I look and speak"><option value={15}>15s</option><option value={30}>30s</option><option value={60}>60s</option></select>}
                 {camOn && <button className="chip" onClick={() => setVoiceAlerts((v) => !v)} title="Spoken vehicle alerts">{voiceAlerts ? "🔊" : "🔇"} <span className="cam-toggle-label">{voiceAlerts ? "Alerts on" : "Alerts off"}</span></button>}
                 {camOn && <button className="chip" onClick={() => setDetectPaused((p) => !p)}>{detectPaused ? "▶ Resume" : "⏸ Pause"}</button>}
                 {kioskOn ? <button className="chip cam-off" onClick={kioskStop}>🧑🤝🧑 Stop visitor mode</button> : <button className="chip cam-on" onClick={kioskStart}>🧑🤝🧑 Visitor mode</button>}
@@ -1818,6 +1821,7 @@ export default function Home() {
                   <div className="vehicle-alert">
                     <span className="vehicle-pulse" />
                     ⚠️ {VEHICLE_LABEL[vehicleAlert.name] || vehicleAlert.name} approaching — {vehicleAlert.dist === "near" ? "very close!" : vehicleAlert.dist === "medium" ? "getting closer" : "in the distance"} · {vehicleAlert.score}%
+                    <span className={`vehicle-meter ${vehicleAlert.dist}`} title="Proximity"><i /></span>
                   </div>
                 )}
                 {!camOn && (
@@ -1887,7 +1891,7 @@ export default function Home() {
                     <div className="live-ask-hints">
                       <button className="chip" disabled={liveBusy} onClick={() => askLive("What am I looking at? Describe it in 2 short sentences.")}>👀 What do you see?</button>
                       <button className="chip" disabled={liveBusy} onClick={() => askLive("Look at this, check the web for the latest information about it, and tell me the newest details.")}>🔎 See + search web</button>
-                      <button className="chip" disabled={liveBusy} onClick={toggleWatch}>{watchMode ? "⏸ Stop watching" : "👀 Watch mode (30s)"}</button>
+                      <button className="chip" disabled={liveBusy} onClick={toggleWatch}>{watchMode ? "⏸ Stop watching" : `👀 Watch mode (${watchSecs}s)`}</button>
                     </div>
                     {liveBusy && <div className="typing" style={{ alignSelf: "flex-start" }}><span /><span /><span /></div>}
                   </div>
@@ -2122,12 +2126,25 @@ export default function Home() {
               <div className="settings-body">
                 <label className="settings-label">Voice provider</label>
                 <div className="voice-providers">
-                  {[{ id: "server", icon: "🔊", name: "Arynox voice", desc: "Premium cloud voice — works everywhere" }, { id: "browser", icon: "🌐", name: "Device voices", desc: "Free voices on this device (English, हिन्दी, मराठी)" }, { id: "voicebox", icon: "🎛", name: "Voicebox (my voices)", desc: "Use cloned / custom voices from the free Voicebox app" }].map((p) => (
+                  {[{ id: "server", icon: "🎙", name: "Neural voices (Sarvam AI)", desc: "Real human-like Indian voices — हिन्दी, मराठी, English" }, { id: "browser", icon: "🌐", name: "Device voices", desc: "Free voices on this device (English, हिन्दी, मराठी)" }].map((p) => (
                     <button key={p.id} className={`voice-provider ${voiceSet.provider === p.id ? "on" : ""}`} onClick={() => { const nv = { ...voiceSet, provider: p.id }; setVoiceSet(nv); save(KEY.voice, nv); }}>
                       <span>{p.icon}</span><b>{p.name}</b><em>{p.desc}</em>
                     </button>
                   ))}
                 </div>
+                {voiceSet.provider === "server" && (
+                  <div className="settings-section">
+                    <label className="settings-label">Neural voice</label>
+                    <select className="auto-input" value={voiceSet.sarvamVoice || "kavya"} onChange={(e) => { const nv = { ...voiceSet, sarvamVoice: e.target.value }; setVoiceSet(nv); save(KEY.voice, nv); }}>
+                      <option value="kavya">Kavya (female) — हिन्दी · मराठी · English</option>
+                      <option value="aditya">Aditya (male) — हिन्दी · मराठी · English</option>
+                      <option value="shreya">Shreya (female) — हिन्दी · मराठी · English</option>
+                      <option value="rahul">Rahul (male) — हिन्दी · मराठी · English</option>
+                    </select>
+                    <button className="chip" onClick={() => speak("Hello! This is my neural voice. नमस्कार! मी मराठीत बोलू शकतो.", "en")}>▶ Test this voice</button>
+                    <p className="auto-note">🎙 Real-time neural speech from <b>Sarvam AI</b> — natural, human-like voices in Hindi, Marathi and English. If the service is busy, Arynox automatically falls back to a built-in voice.</p>
+                  </div>
+                )}
                 {voiceSet.provider === "browser" && (
                   <div className="settings-section">
                     <label className="settings-label">Device voice</label>
@@ -2143,28 +2160,6 @@ export default function Home() {
                     </div>
                     <button className="chip" onClick={() => speakBrowser("Hello! This is how my voice sounds. नमस्कार! मी मराठीत बोलू शकतो.", "en")}>▶ Test this voice</button>
                   </div>
-                )}
-                {voiceSet.provider === "voicebox" && (
-                  <div className="settings-section">
-                    <label className="settings-label">Voicebox app URL</label>
-                    <input className="auto-input" value={voiceSet.vbUrl || "http://127.0.0.1:17493"} onChange={(e) => { const nv = { ...voiceSet, vbUrl: e.target.value }; setVoiceSet(nv); save(KEY.voice, nv); }} />
-                    <button className="chip" disabled={vbTesting} onClick={testVoicebox}>{vbTesting ? "Testing…" : "🔌 Test connection"}</button>
-                    {vbProfiles && vbProfiles.length > 0 && (
-                      <>
-                        <label className="settings-label">Your voice</label>
-                        <select className="auto-input" value={voiceSet.vbProfile || ""} onChange={(e) => { const nv = { ...voiceSet, vbProfile: e.target.value }; setVoiceSet(nv); save(KEY.voice, nv); }}>
-                          <option value="">Default voice</option>
-                          {vbProfiles.map((p, i) => (
-                            <option key={i} value={p.id || p.name || ""}>{(p.name || p.id || "Voice " + (i + 1))}</option>
-                          ))}
-                        </select>
-                      </>
-                    )}
-                    <p className="auto-note">🎛 Voicebox is a free open-source app (voicebox.sh). Install it on your PC, clone your voice with a few seconds of audio, and Arynox will speak in that voice. Make sure Voicebox is running before chatting.</p>
-                  </div>
-                )}
-                {voiceSet.provider !== "voicebox" && (
-                  <p className="auto-note">Tip: to use <b>your own cloned voice</b>, pick the Voicebox provider and install the free open-source app from voicebox.sh — clone any voice in seconds.</p>
                 )}
               </div>
             )}
@@ -2405,7 +2400,16 @@ export default function Home() {
               ) : (
                 <>
                   <div className="premium-banner off">You are on the <b>free plan</b> — everything you see works now.</div>
-                  <div className="plan-price">₹299<span>/month</span></div>
+                  <div className="plan-price">{pxRates ? `${pxInfo.cur.symbol}${pxInfo.pro.amount}` : "…"}<span>/month</span></div>
+                  <div className="plan-currency">
+                    <span>{(pxRegion?.flag || "🌍")} {(pxRegion?.name || "detecting region")} — auto-converted from ₹{BASE_INR}</span>
+                    <select value={pxCur} onChange={(e) => setPxCurSaved(e.target.value)} aria-label="Choose currency">
+                      <option value="auto">Auto currency</option>
+                      {CURRENCIES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.flag} {c.name} ({c.code})</option>
+                      ))}
+                    </select>
+                  </div>
                   <ul className="plan-features">
                     <li>⚡ Faster models with unlimited deep research</li>
                     <li>💬 WhatsApp bot for your own business number</li>
