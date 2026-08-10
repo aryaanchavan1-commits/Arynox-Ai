@@ -9,13 +9,13 @@ import JSZip from "jszip";
 import { classify } from "@/lib/intent";
 import { sb } from "@/lib/supabase-client";
 
-const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos" };
+const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos", code: "arynox_code_msgs" };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
 const GEN_RE = /\b(generate|create|draw|make|imagine|render|picture|image|photo|art of|बनाओ|बना|तस्वीर|चित्र|ड्रा|छवि)\b/i;
 const DEFAULT_PROJECT = [
-  { name: "main.js", code: "// Welcome to Arynox IDE!\n// Write JavaScript, press Run, and watch the output.\n\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n\nconsole.log(greet(\"Aryan\"));\n" },
+  { name: "main.js", code: "// Welcome to Arynox Code!\n// Write JavaScript, press Run, and watch the output.\n// Click 🤖 Agent to ask the AI to build or fix things.\n\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n\nconsole.log(greet(\"Aryan\"));\n" },
 ];
 
 function escapeHtml(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
@@ -54,17 +54,21 @@ const TOOL_ICONS = { web_search: "🔎", get_url: "📄", run_code: "⚙", write
 const OBJECT_ICONS = {
   person: "🧍", human: "🧍", man: "🧍", woman: "🧍", people: "🧍",
   laptop: "💻", computer: "💻", phone: "📱", smartphone: "📱",
-  bottle: "🍾", cup: "☕", mug: "☕", water: "🥤", drink: "🥤",
-  chair: "🪑", table: "🪑", desk: "🪑", sofa: "🛋",
-  dog: "🐶", cat: "🐱", bird: "🐦", pet: "🐾",
-  book: "📚", paper: "📄", notebook: "📓",
+  bottle: "🍾", cup: "☕", mug: "☕", water: "🥤", drink: "🥤", wine: "🍷", bowl: "🥣", fork: "🍴", knife: "🔪",
+  chair: "🪑", table: "🪑", desk: "🪑", sofa: "🛋", bench: "🪑", dining: "🍽",
+  dog: "🐶", cat: "🐱", bird: "🐦", pet: "🐾", horse: "🐴", cow: "🐄", sheep: "🐑", elephant: "🐘", bear: "🐻", zebra: "🦓", giraffe: "🦒",
+  book: "📚", paper: "📄", notebook: "📓", document: "📄", doc: "📄",
   window: "🪟", door: "🚪", wall: "🧱",
-  tv: "📺", screen: "🖥", monitor: "🖥",
-  keyboard: "⌨", mouse: "🖱", remote: "🎛",
-  bag: "🎒", backpack: "🎒", shoes: "👟",
-  clock: "🕐", watch: "⌚", lamp: "💡", light: "💡",
-  car: "🚗", vehicle: "🚗", bicycle: "🚲",
-  plant: "🪴", flower: "🌸", tree: "🌳",
+  tv: "📺", screen: "🖥", monitor: "🖥", laptop_computer: "💻",
+  keyboard: "⌨", mouse: "🖱", remote: "🎛", cell_phone: "📱",
+  bag: "🎒", backpack: "🎒", handbag: "👜", suitcase: "🧳", shoes: "👟", tie: "👔", hat: "🎩", glasses: "👓",
+  clock: "🕐", watch: "⌚", lamp: "💡", light: "💡", candle: "🕯",
+  car: "🚗", vehicle: "🚗", bicycle: "🚲", motorcycle: "🏍", bus: "🚌", truck: "🚚", train: "🚆", airplane: "✈️", boat: "⛵",
+  plant: "🪴", flower: "🌸", tree: "🌳", potted_plant: "🪴",
+  refrigerator: "🧊", oven: "🍳", microwave: "🔥", toaster: "🍞", sink: "🚰", couch: "🛋", bed: "🛏", bench: "🪑",
+  sports_ball: "⚽", baseball: "⚾", football: "🏈", tennis: "🎾", skateboard: "🛹", surfboard: "🏄", skis: "🎿",
+  snowboard: "🏂", frisbee: "🥏", kite: "🪁", umbrella: "☂️", scissors: "✂️", toothbrush: "🪥", hair_drier: "💨", razor: "🪒",
+  sandwich: "🥪", banana: "🍌", apple: "🍎", orange: "🍊", carrot: "🥕", broccoli: "🥦", cake: "🍰", donut: "🍩", pizza: "🍕", hot_dog: "🌭", french_fries: "🍟",
 };
 
 export default function Home() {
@@ -97,6 +101,10 @@ export default function Home() {
   const [authPass, setAuthPass] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [authForgot, setAuthForgot] = useState(false);
+  const [authReset, setAuthReset] = useState(false);
+  const [authPass2, setAuthPass2] = useState("");
+  const [authMailInfo, setAuthMailInfo] = useState("");
   const [business, setBusiness] = useState(() => load(KEY.business, null));
   const [guideOpen, setGuideOpen] = useState("");
   const [mcpInfo, setMcpInfo] = useState([]);
@@ -118,13 +126,26 @@ export default function Home() {
   const [running, setRunning] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [idePreview, setIdePreview] = useState(false);
+  const [codeMsgs, setCodeMsgs] = useState(() => load(KEY.code, []));
+  const [codeInput, setCodeInput] = useState("");
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeErr, setCodeErr] = useState("");
+  const [agentOpen, setAgentOpen] = useState(false);
   const previewUrl = () => `/api/preview${user?.token ? "?t=" + encodeURIComponent(user.token) : ""}`;
   const hasHtml = project.some((f) => /\.html?$/i.test(f.name));
 
   const [camOn, setCamOn] = useState(false);
   const [objects, setObjects] = useState([]);
+  const [boxes, setBoxes] = useState([]);
+  const [docs, setDocs] = useState([]);
   const [detecting, setDetecting] = useState(false);
   const [detectPaused, setDetectPaused] = useState(false);
+  const [aiVision, setAiVision] = useState(false);
+  const [aiFailed, setAiFailed] = useState(false);
+  const [faceOpen, setFaceOpen] = useState(false);
+  const [faceBusy, setFaceBusy] = useState(false);
+  const [faceErr, setFaceErr] = useState("");
+  const [faceMsg, setFaceMsg] = useState("");
 
   const audioRef = useRef(null);
   const endRef = useRef(null);
@@ -134,8 +155,13 @@ export default function Home() {
   const projectRef = useRef(null);
   const pendingPromptRef = useRef("");
   const videoRef = useRef(null);
+  const overlayRef = useRef(null);
+  const faceVideoRef = useRef(null);
+  const faceStreamRef = useRef(null);
   const streamRef = useRef(null);
   const detectTimer = useRef(null);
+  const aiVisionRef = useRef(false);
+  const tickRef = useRef(0);
   const toastTimer = useRef(null);
   const abortRef = useRef(null);
 
@@ -206,11 +232,21 @@ export default function Home() {
           setUser(u);
           save(KEY.session, u);
         }
+        try {
+          const p = new URLSearchParams(window.location.search);
+          const derr = p.get("error_description") || p.get("error");
+          if (derr) {
+            const msg = p.get("error_description") ? `Google sign-in failed: ${p.get("error_description")}` : `Sign-in failed (${derr})`;
+            setAuthError(msg.slice(0, 220));
+            window.history.replaceState({}, "", window.location.pathname);
+          }
+        } catch {}
       } catch {}
       if (mounted) setAuthChecked(true);
     })();
     const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT") { setUser(null); save(KEY.session, null); }
+      if (event === "PASSWORD_RECOVERY") { setAuthReset(true); setAuthError(""); }
     });
     return () => { mounted = false; sub?.subscription?.unsubscribe(); };
   }, []);
@@ -255,7 +291,7 @@ export default function Home() {
           setAuthOpen(false);
           showToast(`👋 welcome, ${u.name}`);
         } else {
-          setAuthError("Account created! Check your email to confirm, then sign in.");
+          setAuthError("Account created! Check your email to confirm, then sign in. No email? Check spam, and wait ~1 min between sign-ups (Supabase limits emails).");
           setAuthTab("in");
         }
       }
@@ -283,6 +319,41 @@ export default function Home() {
     save(KEY.session, u);
     setAuthOpen(false);
     showToast("🎉 exploring in demo mode — sign in to keep your work across devices");
+  };
+
+  const forgotPass = async () => {
+    const email = authEmail.trim().toLowerCase();
+    if (!email) { setAuthError("Enter your account email first."); return; }
+    setAuthBusy(true);
+    setAuthError("");
+    setAuthMailInfo("");
+    try {
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: (typeof window !== "undefined" ? window.location.origin : "") + "/app" });
+      if (error) throw error;
+      setAuthMailInfo(`🔗 Reset link sent to ${email}. Check your inbox — and the spam folder. It works for 1 hour.`);
+      setAuthForgot(false);
+      setAuthTab("in");
+    } catch (err) {
+      setAuthError(friendlyAuthError(err));
+    } finally { setAuthBusy(false); }
+  };
+
+  const doResetPassword = async () => {
+    if (authPass.length < 6) { setAuthError("New password needs at least 6 characters."); return; }
+    if (authPass !== authPass2) { setAuthError("Passwords don't match."); return; }
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const { error } = await sb.auth.updateUser({ password: authPass });
+      if (error) throw error;
+      setAuthReset(false);
+      setAuthPass("");
+      setAuthPass2("");
+      showToast("🔑 password updated — sign in with your new password");
+      try { await sb.auth.signOut(); } catch {}
+    } catch (err) {
+      setAuthError(friendlyAuthError(err));
+    } finally { setAuthBusy(false); }
   };
 
   const setBusinessProfile = (patch) => setBusiness((prev) => { const next = { ...(prev || {}), ...patch }; save(KEY.business, next); return next; });
@@ -542,7 +613,7 @@ export default function Home() {
         if (Array.isArray(data.tools) && data.tools.some((t) => /write_file|edit_file|delete_file|run_code/.test(t))) {
           setTab("ide");
           setIdePreview(true);
-          showToast("🛠 built in the IDE — files + live preview ready");
+          showToast("🛠 built in Code — files + live preview ready");
         }
       }
       if (autoSpeak && !data.codeFiles?.length && !data.files?.length) speak(data.reply, data.lang || "en");
@@ -553,6 +624,55 @@ export default function Home() {
   };
 
   const stopGeneration = () => abortRef.current?.abort();
+
+  const sendCodeAgent = async () => {
+    const text = codeInput.trim();
+    if (!text || codeBusy) return;
+    const userMsg = { role: "user", content: text };
+    const next = [...codeMsgs, userMsg];
+    setCodeMsgs(next);
+    save(KEY.code, next);
+    setCodeInput("");
+    setCodeBusy(true);
+    setCodeErr("");
+    try {
+      const res = await fetch("/api/code", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next, files: project.map((f) => ({ name: f.name, code: f.code })) }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "The coding agent is unavailable right now.");
+      const aiMsg = { role: "assistant", content: d.reply || "(no reply)" };
+      const final = [...next, aiMsg];
+      setCodeMsgs(final);
+      save(KEY.code, final);
+      if (d.workspace?.length) {
+        let changedCount = 0;
+        setProject((prev) => {
+          const byName = new Map(prev.map((f) => [f.name, f]));
+          const newNames = new Set();
+          for (const wf of d.workspace) { byName.set(wf.name, { name: wf.name, code: wf.code }); newNames.add(wf.name); }
+          const next2 = [...byName.values()];
+          save(KEY.project, next2);
+          changedCount = [...newNames].filter((n) => {
+            const p = prev.find((f) => f.name === n);
+            return !p || p.code !== byName.get(n).code;
+          }).length;
+          const added = d.workspace.filter((w) => !prev.some((f) => f.name === w.name));
+          if (added.length) setActiveFile(next2.findIndex((f) => f.name === added[0].name));
+          return next2;
+        });
+        setTimeout(() => {
+          if (changedCount) showToast(`🤖 agent updated ${changedCount} file${changedCount === 1 ? "" : "s"} in your project`);
+          else showToast("🤖 agent reviewed your code");
+        }, 100);
+      }
+      if (autoSpeak) speak(d.reply, "en");
+    } catch (err) {
+      setCodeErr(String(err?.message || err).slice(0, 240));
+    } finally { setCodeBusy(false); }
+  };
 
   const transcribeFile = async (file) => {
     setBusy(true);
@@ -640,19 +760,38 @@ export default function Home() {
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
-      setCamOn(true); setObjects([]); setDetectPaused(false);
-      detectTimer.current = setInterval(detectFrame, 3000);
+      setCamOn(true); setObjects([]); setBoxes([]); setDocs([]); setDetectPaused(false);
+      setAiFailed(false);
+      import("@/lib/detect")
+        .then((m) => m.loadObjectModel().then(() => { aiVisionRef.current = true; setAiVision(true); }).catch(() => { aiVisionRef.current = false; setAiFailed(true); }))
+        .catch(() => { aiVisionRef.current = false; setAiFailed(true); });
+      detectTimer.current = setInterval(detectFrame, 900);
       detectFrame();
     } catch { showToast("👁 camera blocked — allow access in the browser"); }
   };
 
   const stopCamera = () => {
-    setCamOn(false); setObjects([]);
+    setCamOn(false); setObjects([]); setBoxes([]); setDocs([]);
     clearInterval(detectTimer.current);
     detectTimer.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    const ov = overlayRef.current;
+    if (ov) ov.getContext("2d").clearRect(0, 0, ov.width, ov.height);
+  };
+
+  const drawBoxes = (objs, docArr) => {
+    const v = videoRef.current;
+    const ov = overlayRef.current;
+    if (!v || !ov || !v.videoWidth) return;
+    const rect = ov.getBoundingClientRect();
+    if (rect.width < 2) return;
+    ov.width = Math.round(rect.width);
+    ov.height = Math.round(rect.height);
+    const m = window.__detectModule;
+    if (!m) return;
+    m.drawDetections(ov.getContext("2d"), v, objs, docArr, ov.width, ov.height);
   };
 
   const detectFrame = async () => {
@@ -661,14 +800,90 @@ export default function Home() {
     if (!v || !v.videoWidth) return;
     setDetecting(true);
     try {
-      const c = document.createElement("canvas");
-      c.width = 640; c.height = 480;
-      c.getContext("2d").drawImage(v, 0, 0, 640, 480);
-      const res = await fetch("/api/detect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: c.toDataURL("image/jpeg", 0.7) }) });
-      const d = await res.json();
-      if (res.ok) setObjects(d.objects || []);
+      if (aiVisionRef.current) {
+        const m = await import("@/lib/detect");
+        window.__detectModule = m;
+        const [objs, docArr] = await Promise.all([
+          m.detectObjects(v).catch(() => []),
+          Promise.resolve(m.detectDocuments(v, v.videoWidth, v.videoHeight)),
+        ]);
+        setBoxes(objs);
+        setDocs(docArr);
+        const humans = objs.filter((b) => b.name === "person").length;
+        const objCounts = {};
+        for (const b of objs) {
+          if (b.name === "person") continue;
+          objCounts[b.name] = (objCounts[b.name] || 0) + 1;
+        }
+        setObjects(Object.keys(objCounts).map((name) => ({ name, count: objCounts[name] })));
+        if (humans) setObjects((prev) => {
+          const p = prev.filter((o) => o.name !== "person");
+          return [{ name: "person", count: humans }, ...p];
+        });
+        requestAnimationFrame(() => drawBoxes(objs, docArr));
+      } else {
+        tickRef.current += 1;
+        if (tickRef.current % 3 !== 0) return;
+        const c = document.createElement("canvas");
+        c.width = 640; c.height = 480;
+        c.getContext("2d").drawImage(v, 0, 0, 640, 480);
+        const res = await fetch("/api/detect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: c.toDataURL("image/jpeg", 0.7) }) });
+        const d = await res.json();
+        if (res.ok) setObjects(d.objects || []);
+      }
     } catch { setDetectPaused(true); setTimeout(() => setDetectPaused(false), 15000); }
     finally { setDetecting(false); }
+  };
+
+  useEffect(() => {
+    if (!faceOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        faceStreamRef.current = stream;
+        const v = faceVideoRef.current;
+        if (v) { v.srcObject = stream; try { await v.play(); } catch {} }
+      } catch { setFaceErr("Camera blocked — allow access to use face sign-in."); }
+    })();
+    return () => {
+      cancelled = true;
+      faceStreamRef.current?.getTracks().forEach((t) => t.stop());
+      faceStreamRef.current = null;
+    };
+  }, [faceOpen]);
+
+  const stopFace = () => { setFaceOpen(false); };
+
+  const captureFace = async () => {
+    const v = faceVideoRef.current;
+    if (!v || !v.videoWidth) { setFaceErr("Camera isn't ready yet — wait a moment."); return; }
+    setFaceBusy(true);
+    setFaceErr("");
+    try {
+      const m = await import("@/lib/detect");
+      const d = await m.getFaceDescriptor(v);
+      if (!d) { setFaceErr("No face detected — move into the frame, face the light, and try again."); return; }
+      setFaceMsg("Face captured — matching your identity…");
+      const isUp = authTab === "up";
+      const res = await fetch(isUp ? "/api/faces/register" : "/api/faces/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isUp ? { d, name: authName, email: authEmail } : { d }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Face authentication failed");
+      const u = { id: data.user.id, email: data.user.email, name: data.user.name, token: data.access_token };
+      setUser(u);
+      save(KEY.session, u);
+      setFaceOpen(false);
+      setAuthOpen(false);
+      showToast(isUp ? `👋 welcome, ${u.name} — your face ID is saved` : `👋 welcome back, ${u.name}`);
+    } catch (err) {
+      setFaceMsg("");
+      setFaceErr(String(err?.message || err).slice(0, 220));
+    } finally { setFaceBusy(false); }
   };
 
   const ToolChips = ({ tools }) => {
@@ -683,7 +898,7 @@ export default function Home() {
         <span className="codeblock-file">{filename || "code"}</span>
         <div className="codeblock-actions">
           <button onClick={() => runCode(code, filename)}>▶ Run</button>
-          <button onClick={() => { setProject((prev) => { const names = new Set(prev.map((f) => f.name)); const orig = filename || "solution.js"; const extIdx = orig.lastIndexOf("."); const base = extIdx > 0 ? orig.slice(0, extIdx) : orig; const ext = extIdx > 0 ? orig.slice(extIdx) : ".js"; let n = orig, i = 1; while (names.has(n)) { n = `${base}_${i++}${ext}`; } const next = [...prev, { name: n, code }]; save(KEY.project, next); return next; }); setActiveFile(project.length); setTab("ide"); }}>Open in IDE</button>
+          <button onClick={() => { setProject((prev) => { const names = new Set(prev.map((f) => f.name)); const orig = filename || "solution.js"; const extIdx = orig.lastIndexOf("."); const base = extIdx > 0 ? orig.slice(0, extIdx) : orig; const ext = extIdx > 0 ? orig.slice(extIdx) : ".js"; let n = orig, i = 1; while (names.has(n)) { n = `${base}_${i++}${ext}`; } const next = [...prev, { name: n, code }]; save(KEY.project, next); return next; }); setActiveFile(project.length); setTab("ide"); }}>Open in Code</button>
           <button onClick={() => download(filename || "script.js", code)}>⬇</button>
           <button onClick={() => navigator.clipboard?.writeText(code)}>⧉</button>
         </div>
@@ -785,19 +1000,42 @@ export default function Home() {
           <h1>Welcome to Arynox AI</h1>
           <p className="authgate-tag">Sign in to continue — your workspace, files and memory are saved to your account, on any device. Or jump straight in with the demo below.</p>
           <div className="auth-tabs">
-            <button className={authTab === "in" ? "active" : ""} onClick={() => { setAuthTab("in"); setAuthError(""); }}>Sign in</button>
-            <button className={authTab === "up" ? "active" : ""} onClick={() => { setAuthTab("up"); setAuthError(""); }}>Create account</button>
+            <button className={authTab === "in" ? "active" : ""} onClick={() => { setAuthTab("in"); setAuthError(""); setAuthForgot(false); }}>Sign in</button>
+            <button className={authTab === "up" ? "active" : ""} onClick={() => { setAuthTab("up"); setAuthError(""); setAuthForgot(false); }}>Create account</button>
           </div>
-          {authTab === "up" && <input className="auto-input" placeholder="Your name" value={authName} onChange={(e) => setAuthName(e.target.value)} />}
-          <input className="auto-input" type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} />
-          <input className="auto-input" type="password" placeholder="Password (min 6 characters)" value={authPass} onChange={(e) => setAuthPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doAuth(); }} />
-          {authError && <div className="auth-error">{authError}</div>}
-          <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={doAuth}>{authBusy ? "Working..." : authTab === "in" ? "Sign in" : "Create account"}</button>
+          {authReset ? (
+            <>
+              <p className="authgate-tag">Set a new password for your account.</p>
+              <input className="auto-input" type="password" placeholder="New password (min 6 characters)" value={authPass} onChange={(e) => setAuthPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doResetPassword(); }} />
+              <input className="auto-input" type="password" placeholder="Confirm new password" value={authPass2} onChange={(e) => setAuthPass2(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doResetPassword(); }} />
+              {authError && <div className="auth-error">{authError}</div>}
+              <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={doResetPassword}>{authBusy ? "Working..." : "Save new password"}</button>
+              <button className="chip" style={{ width: "100%" }} onClick={() => { setAuthReset(false); setAuthPass(""); setAuthPass2(""); setAuthError(""); }}>← Back to sign in</button>
+            </>
+          ) : authForgot ? (
+            <>
+              <p className="authgate-tag">Enter your account email — we'll send a reset link that works for 1 hour.</p>
+              <input className="auto-input" type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") forgotPass(); }} />
+              {authError && <div className="auth-error">{authError}</div>}
+              {authMailInfo && <div className="auth-ok">{authMailInfo}</div>}
+              <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={forgotPass}>{authBusy ? "Working..." : "Send reset link"}</button>
+              <button className="chip" style={{ width: "100%" }} onClick={() => { setAuthForgot(false); setAuthError(""); setAuthMailInfo(""); }}>← Back to sign in</button>
+            </>
+          ) : (
+            <>
+              {authTab === "up" && <input className="auto-input" placeholder="Your name" value={authName} onChange={(e) => setAuthName(e.target.value)} />}
+              <input className="auto-input" type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} />
+              <input className="auto-input" type="password" placeholder="Password (min 6 characters)" value={authPass} onChange={(e) => setAuthPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doAuth(); }} />
+              {authTab === "in" && <button className="auth-forgot" onClick={() => { setAuthForgot(true); setAuthError(""); setAuthMailInfo(""); }}>Forgot password?</button>}
+              {authError && <div className="auth-error">{authError}</div>}
+              <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={doAuth}>{authBusy ? "Working..." : authTab === "in" ? "Sign in" : "Create account"}</button>
+            </>
+          )}
           <div className="auth-or">or</div>
           <button className="chip" style={{ width: "100%" }} disabled={authBusy} onClick={googleSignIn}>🔵 Continue with Google</button>
           <button className="chip demo-btn" style={{ width: "100%" }} disabled={authBusy} onClick={demoSignIn}>⚡ Try a quick demo — no account needed</button>
           <div className="authgate-feats">
-            <span>💬 Trilingual chat</span><span>🛠 Coding IDE + live preview</span><span>🎤 Voice & 📷 vision</span><span>📊 Excel · PDF · Word</span><span>📱 Installable app</span>
+            <span>💬 Trilingual chat</span><span>💻 AI code studio + agent</span><span>🎤 Voice & 📷 vision</span><span>📊 Excel · PDF · Word</span><span>📱 Installable app</span>
           </div>
         </div>
         <p className="authgate-foot">Arynox Tech · Ratnagiri, Maharashtra 🇮🇳</p>
@@ -823,7 +1061,7 @@ export default function Home() {
         </div>
         <div className="rail-nav">
           <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}>💬<span>Chat</span></button>
-          <button className={tab === "ide" ? "active" : ""} onClick={() => setTab("ide")}>💻<span>IDE</span></button>
+          <button className={tab === "ide" ? "active" : ""} onClick={() => setTab("ide")}>💻<span>Code</span></button>
           <button className={tab === "camera" ? "active" : ""} onClick={() => setTab("camera")}>👁<span>See</span></button>
           <button className={tab === "auto" ? "active" : ""} onClick={() => setTab("auto")}>⚡<span>Automate</span></button>
         </div>
@@ -891,7 +1129,7 @@ export default function Home() {
                     <button className="sugg-card" onClick={() => send("Create a monthly budget in Excel")}><span>📊</span><div><b>Excel budget</b><em>Spreadsheet, ready to download</em></div></button>
                     <button className="sugg-card" onClick={() => send("What's today's latest tech news?")}><span>🔎</span><div><b>Live info</b><em>Search the web for answers</em></div></button>
                     <button className="sugg-card" onClick={() => send("Draw a futuristic city at night")}><span>🖼️</span><div><b>Generate an image</b><em>Create art on demand</em></div></button>
-                    <button className="sugg-card" onClick={() => send("Build a to-do app with HTML, CSS and JS")}><span>💻</span><div><b>Web app project</b><em>Multi-file app in your IDE</em></div></button>
+                    <button className="sugg-card" onClick={() => send("Build a to-do app with HTML, CSS and JS")}><span>💻</span><div><b>Web app project</b><em>Multi-file app in Code</em></div></button>
                     <button className="sugg-card" onClick={() => { pendingPromptRef.current = "Summarize this file"; attachRef.current?.click(); }}><span>📎</span><div><b>Work with files</b><em>Any file — Excel, Word, PDF, audio, images</em></div></button>
                   </div>
                   <div className="welcome-sub">For business owners — hotels, resorts, restaurants in Konkan & beyond</div>
@@ -972,11 +1210,12 @@ export default function Home() {
         {tab === "ide" && (
           <div className="ide">
             <header className="topbar">
-              <div className="brand"><span className="dot busy" /><span className="status">IDE — build & run entire projects</span></div>
+              <div className="brand"><span className="dot busy" /><span className="status">Code — build, run & ask the coding agent</span></div>
               <div className="ide-bar">
                 <input ref={projectRef} type="file" webkitdirectory="" multiple hidden onChange={uploadProject} />
                 <button className="chip" title="Upload an entire project folder - the AI works on it" onClick={() => projectRef.current?.click()}>📁 Upload project</button>
                 <button className={`chip ${idePreview ? "on" : ""}`} onClick={() => setIdePreview(!idePreview)} title="Preview the website live">🌐 Preview</button>
+                <button className={`chip ${agentOpen ? "on" : ""}`} onClick={() => setAgentOpen(!agentOpen)} title="Talk to the AI coding agent">🤖 Agent</button>
                 <input className="file-name" placeholder="new-file.js" value={newFileName} onChange={(e) => setNewFileName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addFile(); }} />
                 <button className="chip" onClick={addFile}>＋ File</button>
                 <button className="chip" onClick={() => { setRunOut(""); }}>⌫ Clear</button>
@@ -1008,6 +1247,44 @@ export default function Home() {
                 <div className="console-head">Output</div>
                 <pre className="console-body">{runOut || "// Press ▶ Run project to see the output here."}</pre>
               </div>
+              {agentOpen && (
+                <div className="agent-panel">
+                  <div className="agent-head">
+                    <span>🤖 Coding agent</span>
+                    <button className="icon-btn" onClick={() => setAgentOpen(false)} title="Close">✕</button>
+                  </div>
+                  <div className="agent-body">
+                    {codeMsgs.length === 0 && !codeBusy && (
+                      <div className="agent-empty">
+                        Ask me to build, fix, explain or run your code. I edit your files, verify by running them, and show the output here.
+                        <br/><br/>Try: <em>"add a dark-mode toggle to index.html"</em> · <em>"find and fix the bug in main.js"</em> · <em>"explain this file"</em>
+                      </div>
+                    )}
+                    {codeMsgs.map((m, i) => m.role === "user"
+                      ? <div className="agent-msg user" key={i}>{m.content}</div>
+                      : (
+                        <div className="agent-msg ai" key={i}>
+                          {parseBlocks(m.content).map((b, j) => b.type === "text"
+                            ? <div key={j} dangerouslySetInnerHTML={{ __html: b.html }} />
+                            : <CodeBlock key={j} code={b.code} filename={b.language} />)}
+                        </div>
+                      ))}
+                    {codeBusy && <div className="typing" style={{ alignSelf: "flex-start" }}><span /><span /><span /></div>}
+                    {codeErr && <div className="auth-error">{codeErr}</div>}
+                  </div>
+                  <div className="agent-foot">
+                    <textarea
+                      className="agent-input"
+                      placeholder="Ask the agent to code…"
+                      value={codeInput}
+                      onChange={(e) => setCodeInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendCodeAgent(); } }}
+                      rows={2}
+                    />
+                    <button className="send-btn" disabled={codeBusy || !codeInput.trim()} onClick={sendCodeAgent}>➤</button>
+                  </div>
+                </div>
+              )}
             </div>
             {idePreview && (
               <div className="ide-preview">
@@ -1025,38 +1302,55 @@ export default function Home() {
         {tab === "camera" && (
           <div className="camera">
             <header className="topbar">
-              <div className="brand"><span className={`dot ${camOn ? "busy" : ""}`} /><span className="status">{camOn ? "watching what's in front of the camera" : "camera is off"}</span></div>
+              <div className="brand"><span className={`dot ${camOn ? "busy" : ""}`} /><span className="status">{camOn ? (aiVision ? "⚡ on-device AI vision — people, objects & documents" : "watching what's in front of the camera") : "camera is off"}</span></div>
               <div className="toggles">
+                {camOn && <button className="chip" onClick={() => setDetectPaused((p) => !p)}>{detectPaused ? "▶ Resume" : "⏸ Pause"}</button>}
                 {camOn ? <button className="chip cam-off" onClick={stopCamera}>■ Stop</button> : <button className="chip cam-on" onClick={startCamera}>● Start seeing</button>}
               </div>
             </header>
             <div className="cam-stage">
               <div className="cam-frame">
                 <video ref={videoRef} muted playsInline />
+                <canvas ref={overlayRef} className="cam-overlay" />
                 {!camOn && (
                   <div className="cam-placeholder">
                     <span>👁</span>
                     <p className="cam-place-title">See the world live</p>
-                    <p>Press <b>Start seeing</b> and I will tell you what objects are around you.</p>
+                    <p>Press <b>Start seeing</b> and I will detect <b>people, objects and documents</b> in real time — on your device.</p>
                     <button className="send-btn cam-big" onClick={startCamera}>● Start seeing</button>
                   </div>
                 )}
-                {objects.length > 0 && (
+                {camOn && objects.length > 0 && (
                   <div className="overlay">
-                    {objects.map((o, i) => <span className="detect-chip" key={i}>{OBJECT_ICONS[o.name] || "🔸"} {o.name}{o.count > 1 ? ` ×${o.count}` : ""}</span>)}
+                    {objects.map((o, i) => <span className={`detect-chip ${o.name === "person" ? "chip-human" : o.name === "document" ? "chip-doc" : ""}`} key={i}>{OBJECT_ICONS[o.name] || "🔸"} {o.name}{o.count > 1 ? ` ×${o.count}` : ""}</span>)}
                   </div>
                 )}
+                <div className="cam-legend">
+                  <span><i className="lg-human" /> human</span>
+                  <span><i className="lg-doc" /> document</span>
+                  <span><i className="lg-obj" /> object</span>
+                </div>
               </div>
               <div className="detect-panel">
                 <div className="detect-title">{camOn ? "I can see:" : "Detection is off"}</div>
-                {camOn && objects.length === 0 && <div className="detect-empty">{detecting ? "Looking..." : "Looking around..."}</div>}
+                {camOn && !aiVision && !aiFailed && <div className="detect-empty">{detecting ? "Loading on-device AI…" : "Loading on-device AI…"}</div>}
+                {camOn && aiFailed && <div className="detect-empty">Offline model unavailable — using cloud vision (every ~3s).</div>}
+                {camOn && objects.length === 0 && aiVision && <div className="detect-empty">{detecting ? "Looking…" : "Looking around…"}</div>}
                 <div className="detect-list">
-                  {objects.map((o, i) => <div className="detect-row" key={i}><span>{OBJECT_ICONS[o.name] || "🔸"}</span> {o.name} <em>×{o.count}</em></div>)}
+                  {boxes.filter((b) => b.name === "person").map((b, i) => (
+                    <div className="detect-row row-human" key={`h${i}`}><span>🧍</span> human <em>{Math.round(b.score * 100)}%</em></div>
+                  ))}
+                  {docs.map((d, i) => (
+                    <div className="detect-row row-doc" key={`d${i}`}><span>📄</span> document <em>detected</em></div>
+                  ))}
+                  {objects.filter((o) => o.name !== "person").map((o, i) => (
+                    <div className="detect-row" key={i}><span>{OBJECT_ICONS[o.name] || "🔸"}</span> {o.name} <em>×{o.count}</em></div>
+                  ))}
                 </div>
                 {camOn && (
                   <button className="chip speak-seen" onClick={() => speak("I can see " + objects.map((o) => o.name + (o.count > 1 ? `, ${o.count}` : "")).join(", "), "en")}>🔊 Tell me what you see</button>
                 )}
-                <p className="detect-note">📷 Detection looks at the camera every 3 seconds. Nothing is recorded or stored.</p>
+                <p className="detect-note">⚡ Real-time on-device AI (COCO-SSD + document scanner). Nothing is recorded or uploaded.</p>
               </div>
             </div>
           </div>
@@ -1203,20 +1497,64 @@ export default function Home() {
             ) : (
               <div className="auth-body">
                 <div className="auth-tabs">
-                  <button className={authTab === "in" ? "active" : ""} onClick={() => { setAuthTab("in"); setAuthError(""); }}>Sign in</button>
-                  <button className={authTab === "up" ? "active" : ""} onClick={() => { setAuthTab("up"); setAuthError(""); }}>Create account</button>
+                  <button className={authTab === "in" ? "active" : ""} onClick={() => { setAuthTab("in"); setAuthError(""); setAuthForgot(false); }}>Sign in</button>
+                  <button className={authTab === "up" ? "active" : ""} onClick={() => { setAuthTab("up"); setAuthError(""); setAuthForgot(false); }}>Create account</button>
                 </div>
-                {authTab === "up" && <input className="auto-input" placeholder="Your name" value={authName} onChange={(e) => setAuthName(e.target.value)} />}
-                <input className="auto-input" type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} />
-                <input className="auto-input" type="password" placeholder="Password (min 6 characters)" value={authPass} onChange={(e) => setAuthPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doAuth(); }} />
-                {authError && <div className="auth-error">{authError}</div>}
-                <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={doAuth}>{authBusy ? "Working..." : authTab === "in" ? "Sign in" : "Create account"}</button>
+                {authReset ? (
+                  <>
+                    <input className="auto-input" type="password" placeholder="New password (min 6 characters)" value={authPass} onChange={(e) => setAuthPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doResetPassword(); }} />
+                    <input className="auto-input" type="password" placeholder="Confirm new password" value={authPass2} onChange={(e) => setAuthPass2(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doResetPassword(); }} />
+                    {authError && <div className="auth-error">{authError}</div>}
+                    <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={doResetPassword}>{authBusy ? "Working..." : "Save new password"}</button>
+                    <button className="chip" style={{ width: "100%" }} onClick={() => { setAuthReset(false); setAuthPass(""); setAuthPass2(""); setAuthError(""); }}>← Back to sign in</button>
+                  </>
+                ) : authForgot ? (
+                  <>
+                    <input className="auto-input" type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") forgotPass(); }} />
+                    {authError && <div className="auth-error">{authError}</div>}
+                    {authMailInfo && <div className="auth-ok">{authMailInfo}</div>}
+                    <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={forgotPass}>{authBusy ? "Working..." : "Send reset link"}</button>
+                    <button className="chip" style={{ width: "100%" }} onClick={() => { setAuthForgot(false); setAuthError(""); setAuthMailInfo(""); }}>← Back to sign in</button>
+                  </>
+                ) : (
+                  <>
+                    {authTab === "up" && <input className="auto-input" placeholder="Your name" value={authName} onChange={(e) => setAuthName(e.target.value)} />}
+                    <input className="auto-input" type="email" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} />
+                    <input className="auto-input" type="password" placeholder="Password (min 6 characters)" value={authPass} onChange={(e) => setAuthPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doAuth(); }} />
+                    {authTab === "in" && <button className="auth-forgot" onClick={() => { setAuthForgot(true); setAuthError(""); setAuthMailInfo(""); }}>Forgot password?</button>}
+                    {authError && <div className="auth-error">{authError}</div>}
+                    <button className="send-btn" style={{ width: "100%" }} disabled={authBusy} onClick={doAuth}>{authBusy ? "Working..." : authTab === "in" ? "Sign in" : "Create account"}</button>
+                  </>
+                )}
                 <div className="auth-or">or</div>
                 <button className="chip" style={{ width: "100%" }} disabled={authBusy} onClick={googleSignIn}>🔵 Continue with Google</button>
+                <button className="chip face-btn" style={{ width: "100%" }} disabled={authBusy} onClick={() => { setFaceOpen(true); setFaceErr(""); setFaceMsg(""); setAuthError(""); }}>😀 {authTab === "up" ? "Create account with your face" : "Sign in with your face"}</button>
                 <button className="chip demo-btn" style={{ width: "100%" }} disabled={authBusy} onClick={demoSignIn}>⚡ Try a quick demo — no account needed</button>
                 <p className="auto-note">Your workspace, files and business profile are saved to your account — sign in on any device to continue.</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {faceOpen && (
+        <div className="modal" onClick={stopFace}>
+          <div className="auth-modal face-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="auth-head">
+              <span>{authTab === "up" ? "😀 Create account with your face" : "😀 Sign in with your face"}</span>
+              <button className="icon-btn" onClick={stopFace}>✕</button>
+            </div>
+            <div className="auth-body">
+              <div className="face-box">
+                <video ref={faceVideoRef} muted playsInline />
+                {!faceErr && <div className="face-hint">{faceBusy ? "Scanning your face…" : "Look straight at the camera, in good light, and keep still."}</div>}
+              </div>
+              {faceErr && <div className="auth-error">{faceErr}</div>}
+              {faceMsg && <div className="auth-ok">{faceMsg}</div>}
+              <button className="send-btn" style={{ width: "100%" }} disabled={faceBusy} onClick={captureFace}>{faceBusy ? "Working…" : "📸 Capture my face"}</button>
+              <button className="chip" style={{ width: "100%" }} onClick={stopFace}>← Back</button>
+              <p className="auto-note">🔒 Your face is converted into a private mathematical signature and matched on the server. The raw photo is never stored or shared.</p>
+            </div>
           </div>
         </div>
       )}
@@ -1258,11 +1596,12 @@ const CRED_GUIDES = [
     what: "Lets every visitor log in with one click instead of typing a password. Only the app owner does this once.",
     steps: [
       "Create a Google Cloud project + OAuth client (console.cloud.google.com → APIs & Services → Credentials → Create OAuth client ID → Web application).",
-      "Authorized JavaScript origins: https://your-domain.com (and http://localhost:3000 while developing).",
+      "Authorized JavaScript origins: https://arynox-ai.vercel.app (and http://localhost:3000 while developing).",
       "Authorized redirect URI: https://offnevsupwnwqnhtexed.supabase.co/auth/v1/callback (Supabase handles the Google handshake).",
       "Copy the Client ID and Client Secret from Google Cloud.",
-      "Supabase dashboard → Authentication → Sign In / Up → Providers → Google → Enable, paste Client ID + Secret, Save.",
-      "Also set the app URL in Supabase → Authentication → URL Configuration → Site URL and add https://your-domain.com to Redirect URLs.",
+      "Google Cloud → OAuth consent screen → set app name, user type External, then PUBLISH the app (Status: In production). If you keep it in Testing, ONLY Google accounts you added as Test users can sign in — everyone else gets \"Access blocked\".",
+      "Supabase dashboard → Authentication → Sign In / Up → Providers → Google → Enable, paste the exact Client ID + Secret, Save.",
+      "Supabase → Authentication → URL Configuration: Site URL = https://arynox-ai.vercel.app and add the same URL to Redirect URLs.",
       "Done — the 🔵 Continue with Google button in Sign in now works for everyone.",
     ],
     link: { label: "Google Cloud console", url: "https://console.cloud.google.com/apis/credentials" },

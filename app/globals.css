@@ -339,6 +339,50 @@ html, body {
 }
 .console-body { flex: 1; margin: 0; padding: 16px; overflow: auto; font-family: Consolas, monospace; font-size: 13px; line-height: 1.6; color: #c8f4ff; white-space: pre-wrap; word-break: break-word; }
 
+/* ---------- Coding agent panel ---------- */
+.agent-panel {
+  width: 340px; flex-shrink: 0; display: flex; flex-direction: column;
+  border-left: 1px solid var(--border); background: var(--panel);
+  backdrop-filter: blur(20px); min-height: 0; animation: slideIn 0.2s ease;
+}
+.agent-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px; font-size: 14px; font-weight: 700;
+  border-bottom: 1px solid var(--border); background: var(--panel2); flex-shrink: 0;
+}
+.agent-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.agent-empty { color: var(--faint); font-size: 13px; line-height: 1.6; padding: 4px 2px; }
+.agent-empty em { color: var(--accent1); font-style: normal; }
+.agent-msg {
+  max-width: 92%; padding: 10px 13px; border-radius: 14px;
+  font-size: 13.5px; line-height: 1.6; word-break: break-word; white-space: pre-wrap;
+}
+.agent-msg.user {
+  align-self: flex-end; background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  color: #fff; border-bottom-right-radius: 5px;
+}
+.agent-msg.ai {
+  align-self: flex-start; background: var(--panel2); border: 1px solid var(--border);
+  color: var(--text); border-bottom-left-radius: 5px; white-space: normal;
+}
+.agent-msg.ai .md-list { margin: 6px 0; padding-left: 20px; }
+.agent-msg.ai code { background: rgba(201, 100, 66, 0.18); padding: 1px 5px; border-radius: 5px; font-size: 12.5px; }
+.agent-msg.ai b { color: var(--accent1); }
+.agent-msg.ai a { color: var(--accent1); }
+.agent-foot {
+  display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0;
+  padding: 10px 12px; border-top: 1px solid var(--border); background: var(--panel2);
+}
+.agent-input {
+  flex: 1; background: var(--input); border: 1px solid var(--border2); border-radius: 12px;
+  color: var(--text); padding: 9px 12px; font-size: 13.5px; outline: none; font-family: inherit;
+  resize: none; min-height: 40px; max-height: 120px;
+}
+.agent-input:focus { border-color: var(--accent1); }
+@media (max-width: 860px) {
+  .agent-panel { position: fixed; inset: 0; z-index: 60; width: 100%; border-left: none; border-top: 1px solid var(--border); padding-bottom: 62px; }
+}
+
 /* ---------- Camera ---------- */
 .camera { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .cam-on { border-color: #2fd06a !important; color: #3fca72 !important; background: rgba(47, 208, 106, 0.12) !important; }
@@ -377,6 +421,47 @@ html, body {
 .detect-row em { margin-left: auto; font-style: normal; color: #5fb8d8; font-weight: 700; }
 .speak-seen { justify-content: center; }
 .detect-note { color: var(--faint); font-size: 12px; line-height: 1.5; }
+
+/* ---------- On-device AI vision ---------- */
+.cam-overlay {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 2;
+}
+.cam-legend {
+  position: absolute; left: 14px; bottom: 14px; z-index: 3;
+  display: flex; gap: 12px; padding: 6px 12px; border-radius: 999px;
+  background: rgba(10, 10, 20, 0.7); border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px); font-size: 11.5px; color: #e8e8e8;
+}
+.cam-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.cam-legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.lg-human { background: #ff7a59; }
+.lg-doc { background: #f0b429; }
+.lg-obj { background: #3898ec; }
+.detect-chip.chip-human { background: rgba(255, 122, 89, 0.16); border-color: rgba(255, 122, 89, 0.55); color: #ffb3a1; }
+.detect-chip.chip-doc { background: rgba(240, 180, 41, 0.16); border-color: rgba(240, 180, 41, 0.55); color: #ffd873; }
+.detect-row.row-human { background: rgba(255, 122, 89, 0.1); border-color: rgba(255, 122, 89, 0.35); }
+.detect-row.row-human em { color: #ffb3a1; }
+.detect-row.row-doc { background: rgba(240, 180, 41, 0.1); border-color: rgba(240, 180, 41, 0.35); }
+.detect-row.row-doc em { color: #ffd873; }
+.face-btn {
+  background: linear-gradient(135deg, rgba(201, 100, 66, 0.12), rgba(201, 162, 39, 0.12)) !important;
+  border-color: rgba(201, 100, 66, 0.35) !important; color: var(--text) !important; font-weight: 600;
+}
+.face-btn:hover { box-shadow: 0 0 0 1px rgba(201, 100, 66, 0.5) !important; }
+.face-modal { max-width: 420px; }
+.face-box {
+  position: relative; border-radius: 16px; overflow: hidden;
+  border: 1px solid var(--border2); background: #000;
+  aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center;
+}
+.face-box video { width: 100%; height: 100%; object-fit: cover; }
+.face-hint {
+  position: absolute; left: 12px; right: 12px; bottom: 12px; text-align: center;
+  font-size: 12.5px; color: #fff; padding: 7px 12px; border-radius: 999px;
+  background: rgba(10, 10, 20, 0.72); border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(6px); animation: fadeUp 0.3s ease both;
+}
 
 /* ---------- Automations ---------- */
 .auto { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -440,6 +525,9 @@ html, body {
 .auth-email { color: var(--faint); font-size: 13px; text-align: center; }
 .auth-body b { text-align: center; font-size: 16px; }
 .auth-error { background: rgba(255, 80, 80, 0.12); color: #ff8080; padding: 9px 12px; border-radius: 10px; font-size: 13px; }
+.auth-ok { background: rgba(70, 180, 110, 0.14); color: #7ad59b; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+.auth-forgot { align-self: flex-start; background: none; border: none; color: var(--accent1); font-size: 12.5px; padding: 0; margin-top: -2px; cursor: pointer; }
+.auth-forgot:hover { text-decoration: underline; }
 .auth-or { text-align: center; color: var(--faint); font-size: 12px; }
 
 .plan-price { text-align: center; font-size: 40px; font-weight: 800; background: linear-gradient(90deg, var(--accent1), var(--accent2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }

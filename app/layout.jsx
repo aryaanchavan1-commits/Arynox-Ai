@@ -74,7 +74,7 @@ const jsonLd = {
       applicationCategory: "BusinessApplication",
       operatingSystem: "Web",
       description:
-        "Trilingual AI assistant for Maharashtra — chat, voice, vision, coding IDE, office files (Excel/PDF/Word), deep research and automations in English, Hindi and Marathi.",
+        "Trilingual AI assistant for Maharashtra — chat, voice, vision, AI coding studio with a coding agent, office files (Excel/PDF/Word), deep research and automations in English, Hindi and Marathi.",
       url: "https://arynox-ai.vercel.app",
       inLanguage: ["en", "hi", "mr"],
       offers: { "@type": "Offer", price: "0", priceCurrency: "INR", description: "Free while in testing" },

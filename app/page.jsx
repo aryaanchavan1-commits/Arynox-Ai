@@ -1,11 +1,11 @@
 export const metadata = {
   title: "Arynox AI — Trilingual AI Assistant for Maharashtra | Chat, Code, Create",
-  description: "Arynox AI is Maharashtra's premium AI workspace — trilingual chat, voice, vision, a coding IDE with live website preview, Excel/PDF/Word files, images, deep research and automations. Built by Arynox Tech, Ratnagiri.",
+  description: "Arynox AI is Maharashtra's premium AI workspace — trilingual chat, voice, vision, an AI coding studio with live website preview, Excel/PDF/Word files, images, deep research and automations. Built by Arynox Tech, Ratnagiri.",
 };
 
 const FEATURES = [
   { icon: "💬", title: "Trilingual chat", desc: "Speak English, हिन्दी or मराठी — Arynox answers in your language, and remembers context across chats." },
-  { icon: "🛠", title: "Coding IDE + live preview", desc: "Ask for an app or website and it is built instantly in the IDE — folders, files, run console and a live website preview." },
+  { icon: "💻", title: "AI coding studio + agent", desc: "Ask for an app or website and it is built instantly in Code — files, run console, live preview, and a coding agent that edits, fixes and explains your project on demand." },
   { icon: "🎤", title: "Voice & vision", desc: "Talk to it or show it what is in front of the camera. It hears, sees and responds." },
   { icon: "📊", title: "Excel, PDF & Word", desc: "Create budgets, booking forms, itineraries and reports as real downloadable files — no formulas needed." },
   { icon: "🖼", title: "Image generation", desc: "Describe any scene and get an image — futuristic cities, hotel photos, product mockups, art." },
@@ -51,7 +51,7 @@ export default function Landing() {
           <div className="landing-hero-inner">
             <div className="landing-badge">🇮🇳 Built in Ratnagiri, Maharashtra</div>
             <h1>The AI that <span>works</span> for you —<br />chats, codes and creates</h1>
-            <p className="landing-sub">Arynox AI is a complete AI workspace in English, हिन्दी and मराठी — chat, voice, vision, a coding IDE with live preview, Excel/PDF/Word files, images and automations — with live web search so every answer is verified with real sources.</p>
+            <p className="landing-sub">Arynox AI is a complete AI workspace in English, हिन्दी and मराठी — chat, voice, vision, an AI coding studio with a built-in coding agent, Excel/PDF/Word files, images and automations — with live web search so every answer is verified with real sources.</p>
             <div className="landing-cta big">
               <a className="landing-btn" href="/app">Start free — sign in →</a>
               <a className="landing-btn ghost" href="#features">See what it can do</a>
@@ -66,7 +66,7 @@ export default function Landing() {
               <div className="mock-line ai">🏖 Day 1 — Ratnadurg Fort, Ganpatipule beach, fresh seafood… I have made the PDF and added a booking form for your guests.</div>
               <div className="mock-line ai files">📄 ratnagiri-itinerary.pdf · 📋 booking-request.xlsx</div>
               <div className="mock-line user">Now build a website for my hotel</div>
-              <div className="mock-line ai">🛠 Built in the IDE — 4 files, live preview ready:</div>
+              <div className="mock-line ai">🛠 Built in Code — 4 files, live preview ready:</div>
               <div className="mock-browser">
                 <div className="mock-browser-bar"><span className="mock-dot g" /><span className="mock-dot y" /><span className="mock-dot r" /></div>
                 <div className="mock-site"><b>Sea Breeze Resort</b><i>Ratnagiri · Book now</i></div>
@@ -122,7 +122,7 @@ export default function Landing() {
               <ul>
                 <li>Trilingual chat with memory</li>
                 <li>Voice, vision & camera</li>
-                <li>Coding IDE with live preview</li>
+                <li>AI coding studio with live preview & a coding agent</li>
                 <li>Excel, PDF & Word files</li>
                 <li>Live web search with cited sources</li>
                 <li>Daily usage limits</li>
