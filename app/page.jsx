@@ -16,7 +16,7 @@ const FEATURES = [
 
 const STEPS = [
   { n: "1", title: "Sign in", desc: "One tap with Google, or email — your workspace follows you on any device." },
-  { n: "2", title: "Ask anything", desc: "In English, हिन्दी or मराठी — by typing, voice or camera." },
+  { n: "2", title: "Ask anything", desc: "In English, हिन्दी or मराठी — by typing, voice, camera or any file (Excel, Word, PDF, audio…)." },
   { n: "3", title: "Get it done", desc: "Websites, Excel sheets, PDFs, images, code — built, run and ready to download." },
 ];
 
@@ -24,6 +24,7 @@ const FAQS = [
   { q: "Is Arynox AI really free right now?", a: "Yes — while in testing, everything is free. A Pro tier (₹299/month, on waitlist) is coming with higher limits, priority speed and bigger workspaces." },
   { q: "Does it understand Marathi and Hindi?", a: "Yes. Chat, voice input and replies all work in English, Hindi and Marathi, and the business concierge mode speaks all three naturally." },
   { q: "Can it really build websites and apps?", a: "It writes complete multi-file projects — HTML/CSS/JS websites with a live preview, Python and JavaScript programs — runs them in a sandbox and shows the output." },
+  { q: "Are its facts real or made up?", a: "Arynox verifies facts with live web search (MWMBL + Exa) before answering and cites its sources. When it cannot verify something online, it says so honestly instead of guessing." },
   { q: "Where are my files and chats saved?", a: "To your account. Sign in on any device and your workspace, memory and business profile come back with you." },
   { q: "Is it useful for hotels and businesses?", a: "That is its home turf — booking forms, itineraries, budgets, WhatsApp messages and a concierge that answers in Marathi, Hindi and English for guests." },
 ];
@@ -50,7 +51,7 @@ export default function Landing() {
           <div className="landing-hero-inner">
             <div className="landing-badge">🇮🇳 Built in Ratnagiri, Maharashtra</div>
             <h1>The AI that <span>works</span> for you —<br />chats, codes and creates</h1>
-            <p className="landing-sub">Arynox AI is a complete AI workspace in English, हिन्दी and मराठी — chat, voice, vision, a coding IDE with live preview, Excel/PDF/Word files, images and automations.</p>
+            <p className="landing-sub">Arynox AI is a complete AI workspace in English, हिन्दी and मराठी — chat, voice, vision, a coding IDE with live preview, Excel/PDF/Word files, images and automations — with live web search so every answer is verified with real sources.</p>
             <div className="landing-cta big">
               <a className="landing-btn" href="/app">Start free — sign in →</a>
               <a className="landing-btn ghost" href="#features">See what it can do</a>
@@ -123,6 +124,7 @@ export default function Landing() {
                 <li>Voice, vision & camera</li>
                 <li>Coding IDE with live preview</li>
                 <li>Excel, PDF & Word files</li>
+                <li>Live web search with cited sources</li>
                 <li>Daily usage limits</li>
               </ul>
               <a className="landing-btn" href="/app">Start free</a>
