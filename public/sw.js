@@ -1,4 +1,4 @@
-const CACHE = "arynox-v3";
+const CACHE = "arynox-v4";
 const SHELL = ["/", "/app", "/manifest.webmanifest", "/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -22,19 +22,35 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
 
+  const isNav = req.mode === "navigate";
+
+  if (isNav) {
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok) {
+            const clone = res.clone();
+            e.waitUntil(caches.open(CACHE).then((c) => c.put(req, clone)).catch(() => {}));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req).then((hit) => hit || caches.match("/")))
+    );
+    return;
+  }
+
   e.respondWith(
     caches.match(req).then((hit) => {
-      if (hit) {
-        e.waitUntil(caches.open(CACHE).then((c) => c.add(req)).catch(() => {}));
-        return hit;
-      }
-      return fetch(req).then((res) => {
-        if (res.ok && res.type === "basic") {
-          const clone = res.clone();
-          e.waitUntil(caches.open(CACHE).then((c) => c.put(req, clone)).catch(() => {}));
-        }
-        return res;
-      }).catch(() => caches.match("/"));
+      const network = fetch(req)
+        .then((res) => {
+          if (res.ok && res.type === "basic") {
+            const clone = res.clone();
+            e.waitUntil(caches.open(CACHE).then((c) => c.put(req, clone)).catch(() => {}));
+          }
+          return res;
+        })
+        .catch(() => hit);
+      return hit || network;
     })
   );
 });

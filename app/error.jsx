@@ -8,9 +8,14 @@ export default function ErrorBoundary({ error, reset }) {
       <div style={{ fontSize: 14.5, fontFamily: "Segoe UI, system-ui, sans-serif", color: "#87867f", maxWidth: 420, lineHeight: 1.6 }}>
         {String(error?.message || "An unexpected error occurred.").slice(0, 200)}
       </div>
-      <button onClick={reset} style={{ marginTop: 10, padding: "10px 22px", borderRadius: 12, background: "#c96442", color: "#faf9f5", border: "none", fontWeight: 600, fontFamily: "Segoe UI, system-ui, sans-serif", fontSize: 14.5, cursor: "pointer", boxShadow: "0 0 0 1px rgba(201, 100, 66, 0.9)" }}>
-        Try again
-      </button>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+        <button onClick={reset} style={{ marginTop: 10, padding: "10px 22px", borderRadius: 12, background: "#c96442", color: "#faf9f5", border: "none", fontWeight: 600, fontFamily: "Segoe UI, system-ui, sans-serif", fontSize: 14.5, cursor: "pointer", boxShadow: "0 0 0 1px rgba(201, 100, 66, 0.9)" }}>
+          Try again
+        </button>
+        <button onClick={() => window.location.reload()} style={{ marginTop: 10, padding: "10px 22px", borderRadius: 12, background: "transparent", color: "var(--accent1, #c96442)", border: "1px solid rgba(201, 100, 66, 0.5)", fontWeight: 600, fontFamily: "Segoe UI, system-ui, sans-serif", fontSize: 14.5, cursor: "pointer" }}>
+          Reload page
+        </button>
+      </div>
     </div>
   );
 }
