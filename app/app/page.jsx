@@ -148,6 +148,19 @@ export default function Home() {
   const [faceErr, setFaceErr] = useState("");
   const [faceMsg, setFaceMsg] = useState("");
 
+  const [me, setMe] = useState({ email: "", isAdmin: false, premium: false, premiumUntil: 0 });
+  const [visitors, setVisitors] = useState(() => load("arynox_visitors", []));
+  const [kioskOn, setKioskOn] = useState(false);
+  const [kioskStep, setKioskStep] = useState("off"); // off | idle | ask_name | ask_looking | guiding | done
+  const [kioskStatus, setKioskStatus] = useState("");
+  const [kioskName, setKioskName] = useState("");
+  const [kioskLooking, setKioskLooking] = useState("");
+  const [kioskBusy, setKioskBusy] = useState(false);
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminDays, setAdminDays] = useState(30);
+  const [adminList, setAdminList] = useState([]);
+  const [adminBusy, setAdminBusy] = useState(false);
+
   const audioRef = useRef(null);
   const endRef = useRef(null);
   const recRef = useRef(null);
@@ -165,6 +178,7 @@ export default function Home() {
   const tickRef = useRef(0);
   const toastTimer = useRef(null);
   const abortRef = useRef(null);
+  const kioskRef = useRef({ lastAsk: 0, step: "off" });
 
   const showToast = (t) => {
     setToast(t);
@@ -252,6 +266,18 @@ export default function Home() {
     return () => { mounted = false; sub?.subscription?.unsubscribe(); };
   }, []);
   const authHeaders = () => (user?.token ? { Authorization: `Bearer ${user.token}` } : {});
+
+  useEffect(() => {
+    if (!user?.token) return;
+    let dead = false;
+    fetch("/api/me", { headers: { Authorization: `Bearer ${user.token}` } })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!dead && d) setMe({ email: d.email || user.email, isAdmin: !!d.isAdmin, premium: !!d.premium, premiumUntil: d.premiumUntil || 0 });
+      })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [user?.token, user?.email]);
 
   const friendlyAuthError = (err) => {
     const m = String(err?.message || err || "");
@@ -604,6 +630,11 @@ export default function Home() {
       return;
     }
 
+    if (isBuildRequest(text)) {
+      await buildInIde(text);
+      return;
+    }
+
     try {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
@@ -664,6 +695,58 @@ export default function Home() {
     } catch (err) {
       if (err?.name === "AbortError") persist([...history, { role: "assistant", content: "⏹ stopped — send your next message to continue", lang: "en" }]);
       else persist([...history, { role: "assistant", content: "Network error: " + err.message, lang: "en" }]);
+    } finally { setBusy(false); abortRef.current = null; }
+  };
+
+  const isBuildRequest = (text) => {
+    const t = (text || "").toLowerCase();
+    if (genMode) return false;
+    if (/image|photo|picture|drawing|illustration|logo\b|banner|avatar|wallpaper/.test(t) && !/website|web ?app|app\b/.test(t)) return false;
+    if (classify(t) === "image") return false;
+    return /(^|\s)(build|make|create|develop|code|write|program|start)\s+(me\s+)?(a|an|my|the|this|small|simple|full|modern|responsive|basic|landing)?\s*(website|web ?site|web ?app|app|application|game|tool|dashboard|todo|calculator|quiz|chat ?bot|bot|portfolio|landing ?page|blog|store|shop|ecommerce|e-commerce|cms|crm|script|program|extension|page|site|form|login|sign ?up|timer|clock|notepad|notes|resume|cv|invoice|menu|poster)/i.test(t)
+      || /(build|create|make)\s+(me\s+)?(a|an)\s+.+(website|web ?app|app|game|tool|dashboard|calculator|chat ?bot|portfolio|blog|store)/i.test(t);
+  };
+
+  const buildInIde = async (text) => {
+    setBusy(true);
+    try {
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      const timer = setTimeout(() => ctrl.abort(), 240000);
+      const res = await fetch("/api/code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ messages: [{ role: "user", content: text }], files: project.map((f) => ({ name: f.name, code: f.code })) }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "The coding agent is unavailable right now.");
+      if (d.workspace?.length) {
+        let added = 0;
+        setProject((prev) => {
+          const byName = new Map(prev.map((f) => [f.name, f]));
+          for (const wf of d.workspace) { if (!byName.has(wf.name)) added++; byName.set(wf.name, { name: wf.name, code: wf.code }); }
+          const next = [...byName.values()];
+          save(KEY.project, next);
+          return next;
+        });
+        const cm = [...codeMsgs, { role: "user", content: text }, { role: "assistant", content: d.reply || "Done." }];
+        setCodeMsgs(cm);
+        save(KEY.code, cm);
+        setTab("ide");
+        setIdePreview(true);
+        setAgentOpen(true);
+        persist([...messages, { role: "user", content: text }, { role: "assistant", content: `🛠 Built in the Code tab — ${added} file${added === 1 ? "" : "s"} added. Open 💻 Code to see your project, run it, download the ZIP, or ask me to change anything.\n\n${(d.reply || "").slice(0, 900)}`, lang: "en" }]);
+        showToast(`🛠 built ${added} file${added === 1 ? "" : "s"} in Code — preview ready`);
+        if (autoSpeak) speak((d.reply || "").replace(/\*\*/g, "").slice(0, 300), "en");
+      } else {
+        persist([...messages, { role: "user", content: text }, { role: "assistant", content: d.reply || "Done.", lang: "en" }]);
+        if (autoSpeak) speak(d.reply || "", "en");
+      }
+    } catch (err) {
+      if (err?.name === "AbortError") persist([...messages, { role: "user", content: text }, { role: "assistant", content: "⏹ build stopped — I can continue with the next instruction", lang: "en" }]);
+      else persist([...messages, { role: "user", content: text }, { role: "assistant", content: "⚠️ " + (err.message || "Could not build that."), lang: "en" }]);
     } finally { setBusy(false); abortRef.current = null; }
   };
 
@@ -766,7 +849,7 @@ export default function Home() {
     attachFile(file);
   };
 
-  const startRecord = async () => {
+  const startRecord = async (onText) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
@@ -783,7 +866,10 @@ export default function Home() {
           form.append("audio", new File([wav], "voice.wav", { type: "audio/wav" }));
           const res = await fetch("/api/stt", { method: "POST", body: form, signal: AbortSignal.timeout(45000) });
           const data = await res.json();
-          if (res.ok && data.text) { setInput(data.text); setTimeout(() => send(data.text), 60); }
+          if (res.ok && data.text) {
+            if (onText) onText(data.text);
+            else { setInput(data.text); setTimeout(() => send(data.text), 60); }
+          } else if (onText) onText("");
           else showToast("🎤 could not hear — try again");
         } catch { showToast("🎤 mic error"); }
       };
@@ -797,6 +883,90 @@ export default function Home() {
     if (recRef.current && recRef.current.state !== "inactive") recRef.current.stop();
     setRecording(false);
   };
+
+  const saveVisitor = (name, lookingFor) => {
+    const v = { name: name || "Guest", lookingFor: lookingFor || "", at: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }), ts: Date.now() };
+    setVisitors((prev) => { const next = [v, ...prev].slice(0, 50); save("arynox_visitors", next); return next; });
+    try {
+      fetch("/api/visitors", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name: v.name, lookingFor: v.lookingFor }), signal: AbortSignal.timeout(15000) }).catch(() => {});
+    } catch {}
+    return v;
+  };
+
+  const kioskListen = () => startRecord((text) => handleKioskText(text));
+
+  const handleKioskText = async (text) => {
+    const t = (text || "").trim();
+    const step = kioskRef.current.step;
+    if (!t) { setKioskStatus("🎤 did not hear you — please try again"); speak("Sorry, I did not hear you. Please try again.", "en"); return; }
+    if (step === "ask_name") {
+      const name = t.split(" ")[0].replace(/^[^a-zA-Z\u0900-\u097F]+/, "");
+      setKioskName(name);
+      setKioskStatus(`👤 Nice to meet you, ${name}!`);
+      await speak(`Nice to meet you, ${name}! What are you looking for today?`, "en");
+      kioskRef.current.step = "ask_looking";
+      setKioskStep("ask_looking");
+      setTimeout(kioskListen, 900);
+    } else if (step === "ask_looking") {
+      setKioskLooking(t);
+      setKioskStatus(`🔍 ${kioskName} is looking for: ${t}`);
+      await guideVisitor(kioskName, t);
+    }
+  };
+
+  const guideVisitor = async (name, lookingFor) => {
+    setKioskBusy(true);
+    kioskRef.current.busy = true;
+    setKioskStep("guiding");
+    setKioskStatus("🧠 thinking how to help…");
+    try {
+      const biz = business?.name ? `The shop is "${business.name}" in ${business.city || ""}. Business details: ${JSON.stringify(business).slice(0, 600)}.` : "";
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: `Act as a friendly, helpful store assistant at the counter. A visitor named "${name}" is looking for: "${lookingFor}". ${biz} Reply in 1-3 short spoken sentences, greeting them by name, telling them what we have for them and guiding them (where to look, what to ask for, what we can show). Sound warm and human — you are talking to them out loud right now.` }],
+          memory, creds, business,
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+      const d = await res.json();
+      const reply = d.reply || "I will help you find that right away!";
+      setKioskStatus(`💬 ${reply}`);
+      saveVisitor(name, lookingFor);
+      await speak(reply.replace(/\*\*|```/g, "").slice(0, 400), d.lang || "en");
+      setKioskStep("done");
+      setTimeout(() => { setKioskStep("idle"); setKioskStatus(""); }, 15000);
+    } catch {
+      saveVisitor(name, lookingFor);
+      setKioskStatus(`👤 Noted — ${name} is looking for ${lookingFor}. I will help in a moment.`);
+      speak(`I have noted that you are looking for ${lookingFor}. Let me check that for you right away, ${name}.`, "en");
+      setKioskStep("done");
+      setTimeout(() => { setKioskStep("idle"); setKioskStatus(""); }, 15000);
+    } finally { setKioskBusy(false); kioskRef.current.busy = false; }
+  };
+
+  const kioskStart = () => {
+    setKioskOn(true);
+    kioskRef.current.step = "idle";
+    kioskRef.current.busy = false;
+    kioskRef.current.lastAsk = Date.now() - 60000;
+    setKioskStep("idle");
+    setKioskStatus("🟢 Waiting for a person… I will greet them and ask their name.");
+    showToast("🧑🤝🧑 Visitor mode on — when a person is seen, I will greet them");
+    if (!camOn) startCamera();
+  };
+
+  const kioskStop = () => {
+    setKioskOn(false);
+    kioskRef.current.step = "off";
+    kioskRef.current.busy = false;
+    setKioskStep("off");
+    setKioskStatus("");
+    stopRecord();
+  };
+
+  const kioskReset = () => { kioskRef.current.step = "idle"; setKioskStep("idle"); setKioskStatus("🟢 Waiting for the next visitor…"); }; 
 
   const startCamera = async () => {
     try {
@@ -865,6 +1035,15 @@ export default function Home() {
           return [{ name: "person", count: humans }, ...p];
         });
         requestAnimationFrame(() => drawBoxes(objs, docArr));
+        if (kioskRef.current.step === "idle" && !kioskRef.current.busy && Date.now() - kioskRef.current.lastAsk > 60000) {
+          kioskRef.current.lastAsk = Date.now();
+          kioskRef.current.step = "ask_name";
+          setKioskStep("ask_name");
+          setKioskStatus("👋 Person seen — greeting them…");
+          await speak("Hello! Welcome! May I know your name, please?", "en");
+          setKioskStatus("🎤 Listening… say your name");
+          setTimeout(kioskListen, 900);
+        }
       } else {
         tickRef.current += 1;
         if (tickRef.current % 3 !== 0) return;
@@ -1106,7 +1285,7 @@ export default function Home() {
         <div className="rail-nav">
           <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}>💬<span>Chat</span></button>
           <button className={tab === "ide" ? "active" : ""} onClick={() => setTab("ide")}>💻<span>Code</span></button>
-          <button className={tab === "camera" ? "active" : ""} onClick={() => setTab("camera")}>👁<span>See</span></button>
+          <button className={tab === "camera" ? "active" : ""} onClick={() => setTab("camera")}>👁<span>Live</span></button>
           <button className={tab === "auto" ? "active" : ""} onClick={() => setTab("auto")}>⚡<span>Automate</span></button>
         </div>
         <div className="rail-foot">
@@ -1116,7 +1295,7 @@ export default function Home() {
           {!isInstalled && (
             <button className="install-btn" onClick={installApp} title="Install Arynox AI as an app">📲<span>Install</span></button>
           )}
-          <button className="upgrade-btn" onClick={() => setUpgradeOpen(true)}>💎<span>Upgrade</span></button>
+          <button className={`upgrade-btn ${me.premium ? "premium" : ""}`} onClick={() => setUpgradeOpen(true)}>💎<span>{me.premium ? "Pro active" : "Upgrade"}</span></button>
           {user ? (
             <button className="user-chip" onClick={signOut} title="Signed in - click to sign out">
               <span className="user-avatar">{(user.name || "U")[0].toUpperCase()}</span>
@@ -1265,6 +1444,7 @@ export default function Home() {
                 <button className="chip" onClick={() => { setRunOut(""); }}>⌫ Clear</button>
                 <button className="chip" onClick={downloadProject}>⬇ ZIP</button>
                 <button className="chip" onClick={downloadWorkspace} title="Download the agent workspace (all files the AI created)">🤖 Workspace ZIP</button>
+                <label className="chip"><input type="checkbox" checked={autoSpeak} onChange={(e) => setAutoSpeak(e.target.checked)} /> 🔊 Speak</label>
                 <button className="send-btn ide-run" disabled={running} onClick={runProject}>{running ? "Running..." : "▶ Run project"}</button>
               </div>
             </header>
@@ -1344,6 +1524,7 @@ export default function Home() {
               <div className="brand"><span className={`dot ${camOn ? "busy" : ""}`} /><span className="status">{camOn ? (aiVision ? "⚡ on-device AI vision — people, objects & documents" : "watching what's in front of the camera") : "camera is off"}</span></div>
               <div className="toggles">
                 {camOn && <button className="chip" onClick={() => setDetectPaused((p) => !p)}>{detectPaused ? "▶ Resume" : "⏸ Pause"}</button>}
+                {kioskOn ? <button className="chip cam-off" onClick={kioskStop}>🧑🤝🧑 Stop visitor mode</button> : <button className="chip cam-on" onClick={kioskStart}>🧑🤝🧑 Visitor mode</button>}
                 {camOn ? <button className="chip cam-off" onClick={stopCamera}>■ Stop</button> : <button className="chip cam-on" onClick={startCamera}>● Start seeing</button>}
               </div>
             </header>
@@ -1388,6 +1569,27 @@ export default function Home() {
                 </div>
                 {camOn && (
                   <button className="chip speak-seen" onClick={() => speak("I can see " + objects.map((o) => o.name + (o.count > 1 ? `, ${o.count}` : "")).join(", "), "en")}>🔊 Tell me what you see</button>
+                )}
+                {kioskOn && (
+                  <div className="kiosk-card">
+                    <div className="kiosk-head">
+                      <b>🧑🤝🧑 Visitor assistant</b>
+                      <button className="chip" onClick={kioskReset}>↺ Reset</button>
+                    </div>
+                    <p className="kiosk-status">{kioskStatus || "Waiting…"}</p>
+                    {kioskStep === "ask_name" && <p className="kiosk-hint">🎤 Speaking — mic listening for their name…</p>}
+                    {kioskStep === "ask_looking" && <p className="kiosk-hint">🎤 Listening for what they need…</p>}
+                    {kioskStep === "guiding" && <p className="kiosk-hint">⏳ Asking the assistant how to help…</p>}
+                    {kioskName && <p className="kiosk-visitor">👤 Visitor: <b>{kioskName}</b>{kioskLooking ? ` — looking for: ${kioskLooking}` : ""}</p>}
+                    <button className="chip kiosk-listen" disabled={kioskBusy || recording} onClick={kioskListen}>{recording ? "◼ Listening…" : "🎤 Answer now (voice)"}</button>
+                    <div className="kiosk-visitors">
+                      <div className="kiosk-visitors-head">📋 Visitors today <button className="icon-btn" title="Clear log" onClick={() => { setVisitors([]); save("arynox_visitors", []); try { fetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ action: "clear_visitors" }) }).catch(() => {}); } catch {} }}>🗑</button></div>
+                      {visitors.length === 0 && <div className="detect-empty">No visitors yet — turn on visitor mode and the assistant will greet people and save their name + what they need.</div>}
+                      {visitors.slice(0, 12).map((v, i) => (
+                        <div className="visitor-row" key={i}><span className="visitor-name">👤 {v.name}</span>{v.lookingFor ? <span className="visitor-need">🔍 {v.lookingFor}</span> : null}<em className="visitor-at">{v.at}</em></div>
+                      ))}
+                    </div>
+                  </div>
                 )}
                 <p className="detect-note">⚡ Real-time on-device AI (COCO-SSD + document scanner). Nothing is recorded or uploaded.</p>
               </div>
@@ -1606,7 +1808,12 @@ export default function Home() {
               <button className="icon-btn" onClick={() => setUpgradeOpen(false)}>✕</button>
             </div>
             <div className="auth-body">
-              <div className="plan-price">₹299<span>/month</span></div>
+              {me.premium ? (
+                <div className="premium-banner">💎 <b>Pro is active</b> — unlocked until {new Date(me.premiumUntil).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
+              ) : (
+                <div className="premium-banner off">You are on the <b>free plan</b> — everything you see works now.</div>
+              )}
+              <div className="plan-price">{me.premium ? "Active" : "₹299"}<span>{me.premium ? "· granted by admin" : "/month"}</span></div>
               <ul className="plan-features">
                 <li>⚡ Faster models with unlimited deep research</li>
                 <li>💬 WhatsApp bot for your own business number</li>
@@ -1614,8 +1821,54 @@ export default function Home() {
                 <li>📁 Bigger workspaces & longer projects</li>
                 <li>⭐ Priority support in Marathi / Hindi / English</li>
               </ul>
-              <button className="send-btn" style={{ width: "100%" }} onClick={() => { setUpgradeOpen(false); showToast("🎉 you are on the waitlist — Pro launches soon"); }}>Join the waitlist</button>
-              <p className="auto-note">You are on the free plan — everything you see works now. Pro launches soon.</p>
+              {!me.premium && <button className="send-btn" style={{ width: "100%" }} onClick={() => { setUpgradeOpen(false); showToast("🎉 you are on the waitlist — Pro launches soon"); }}>Join the waitlist</button>}
+              <p className="auto-note">Pro access is granted by the app owner. Ask them for a 💎 code or email grant.</p>
+              {me.isAdmin && (
+                <div className="admin-panel">
+                  <div className="admin-title">🛡️ Admin — grant Pro access</div>
+                  <div className="admin-row">
+                    <input className="auto-input" placeholder="person@email.com" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
+                    <input className="auto-input admin-days" type="number" min="1" max="3650" value={adminDays} onChange={(e) => setAdminDays(Number(e.target.value) || 30)} title="Days of access" />
+                    <button className="chip" disabled={adminBusy} onClick={async () => {
+                      if (!adminEmail.includes("@")) { showToast("⚠️ enter the person's email"); return; }
+                      setAdminBusy(true);
+                      try {
+                        const res = await fetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ action: "grant", email: adminEmail.trim(), days: adminDays }), signal: AbortSignal.timeout(20000) });
+                        const d = await res.json();
+                        if (!res.ok) throw new Error(d.error);
+                        setAdminList(d.list || []); setAdminEmail(""); showToast(d.result || "granted");
+                      } catch (err) { showToast("⚠️ " + err.message); }
+                      finally { setAdminBusy(false); }
+                    }}>{adminBusy ? "Granting…" : "💎 Grant"}</button>
+                  </div>
+                  <div className="admin-list">
+                    {adminList.length === 0 && <div className="detect-empty">No active grants yet.</div>}
+                    {adminList.map((p) => (
+                      <div className="admin-grant" key={p.email}>
+                        <span>{p.email}</span><em>until {new Date(p.until).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</em>
+                        <button className="icon-btn" title="Revoke" onClick={async () => {
+                          setAdminBusy(true);
+                          try {
+                            const res = await fetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ action: "revoke", email: p.email }), signal: AbortSignal.timeout(20000) });
+                            const d = await res.json();
+                            if (!res.ok) throw new Error(d.error);
+                            setAdminList(d.list || []); showToast("revoked " + p.email);
+                          } catch (err) { showToast("⚠️ " + err.message); }
+                          finally { setAdminBusy(false); }
+                        }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="chip" disabled={adminBusy} onClick={async () => {
+                    setAdminBusy(true);
+                    try {
+                      const res = await fetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ action: "list" }), signal: AbortSignal.timeout(15000) });
+                      const d = await res.json();
+                      if (res.ok) setAdminList(d.list || []);
+                    } catch {} finally { setAdminBusy(false); }
+                  }}>↺ Refresh grants</button>
+                </div>
+              )}
             </div>
           </div>
         </div>

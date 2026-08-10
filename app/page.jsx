@@ -4,13 +4,15 @@ export const metadata = {
 };
 
 const FEATURES = [
-  { icon: "💬", title: "Trilingual chat", desc: "Speak English, हिन्दी or मराठी — Arynox answers in your language, and remembers context across chats." },
-  { icon: "💻", title: "AI coding studio + agent", desc: "Ask for an app or website and it is built instantly in Code — files, run console, live preview, and a coding agent that edits, fixes and explains your project on demand." },
-  { icon: "🎤", title: "Voice & vision", desc: "Talk to it or show it what is in front of the camera. It hears, sees and responds." },
+  { icon: "💬", title: "Normal chat", desc: "Speak English, हिन्दी or मराठी — Arynox answers in your language, remembers context across chats, and reads your files." },
+  { icon: "💻", title: "Coding studio + agent", desc: "Just type \"build me a website\" and it is built instantly in Code — files, folder tree, run console, live preview, and a coding agent that edits and fixes your project on demand." },
+  { icon: "👁", title: "Live detection", desc: "Real-time camera AI sees people, objects and documents on your device — with a visitor assistant that greets people, asks their name, saves what they need and guides them out loud." },
+  { icon: "🎤", title: "Voice everywhere", desc: "Talk to it or show it what is in front of the camera. It hears, sees, speaks back — and announces builds, detections and answers." },
   { icon: "📊", title: "Excel, PDF & Word", desc: "Create budgets, booking forms, itineraries and reports as real downloadable files — no formulas needed." },
   { icon: "🖼", title: "Image generation", desc: "Describe any scene and get an image — futuristic cities, hotel photos, product mockups, art." },
   { icon: "🔎", title: "Deep research", desc: "Live web search with sources for news, prices, trends and answers from the real world." },
   { icon: "⚡", title: "Automations", desc: "Connect Gmail, GitHub, WhatsApp and MCP servers — the AI performs actions for you." },
+  { icon: "💎", title: "Pro access by the owner", desc: "The app owner can grant anyone Pro access in one tap — no payment needed, no cards. Bigger workspaces, faster models, priority support." },
   { icon: "📱", title: "Installable app", desc: "Install Arynox on your phone or desktop like a native app — works offline-friendly and opens instantly." },
 ];
 
@@ -23,7 +25,9 @@ const STEPS = [
 const FAQS = [
   { q: "Is Arynox AI really free right now?", a: "Yes — while in testing, everything is free. A Pro tier (₹299/month, on waitlist) is coming with higher limits, priority speed and bigger workspaces." },
   { q: "Does it understand Marathi and Hindi?", a: "Yes. Chat, voice input and replies all work in English, Hindi and Marathi, and the business concierge mode speaks all three naturally." },
-  { q: "Can it really build websites and apps?", a: "It writes complete multi-file projects — HTML/CSS/JS websites with a live preview, Python and JavaScript programs — runs them in a sandbox and shows the output." },
+  { q: "Can it really build websites and apps?", a: "Yes — just type \"build me a calculator\" or \"make a website for my hotel\" in chat and the build happens automatically in the Code section: complete multi-file projects with a folder tree, run console and live preview." },
+  { q: "What is live detection and visitor mode?", a: "The Live section uses real-time on-device camera AI to see people, objects and documents. Turn on Visitor mode and it greets each person out loud, asks their name, saves what they are looking for, and guides them — like a smart shop assistant on your phone." },
+  { q: "How do I get Pro access?", a: "The app owner grants it — ask them for a 💎 Pro grant with your email. No cards, no payments needed while in testing." },
   { q: "Are its facts real or made up?", a: "Arynox verifies facts with live web search (MWMBL + Exa) before answering and cites its sources. When it cannot verify something online, it says so honestly instead of guessing." },
   { q: "Where are my files and chats saved?", a: "To your account. Sign in on any device and your workspace, memory and business profile come back with you." },
   { q: "Is it useful for hotels and businesses?", a: "That is its home turf — booking forms, itineraries, budgets, WhatsApp messages and a concierge that answers in Marathi, Hindi and English for guests." },
@@ -51,7 +55,7 @@ export default function Landing() {
           <div className="landing-hero-inner">
             <div className="landing-badge">🇮🇳 Built in Ratnagiri, Maharashtra</div>
             <h1>The AI that <span>works</span> for you —<br />chats, codes and creates</h1>
-            <p className="landing-sub">Arynox AI is a complete AI workspace in English, हिन्दी and मराठी — chat, voice, vision, an AI coding studio with a built-in coding agent, Excel/PDF/Word files, images and automations — with live web search so every answer is verified with real sources.</p>
+            <p className="landing-sub">Arynox AI is a complete AI workspace in English, हिन्दी and मराठी — three clean sections: 💬 normal chat, 💻 a coding studio that builds apps the moment you ask, and 👁 live camera detection that greets people, asks their name and guides them. Plus voice, Excel/PDF/Word files, images and automations — with live web search so every answer is verified.</p>
             <div className="landing-cta big">
               <a className="landing-btn" href="/app">Start free — sign in →</a>
               <a className="landing-btn ghost" href="#features">See what it can do</a>
@@ -130,7 +134,7 @@ export default function Landing() {
               <a className="landing-btn" href="/app">Start free</a>
             </div>
             <div className="landing-plan featured">
-              <div className="landing-plan-tag">Coming soon</div>
+              <div className="landing-plan-tag">Granted by the owner</div>
               <h3>Pro</h3>
               <div className="landing-price">₹299<span>/month</span></div>
               <ul>
@@ -140,7 +144,7 @@ export default function Landing() {
                 <li>Automations & MCP servers</li>
                 <li>Early-access features</li>
               </ul>
-              <a className="landing-btn ghost" href="/app">Join the waitlist</a>
+              <a className="landing-btn ghost" href="/app">Ask the owner to unlock 💎</a>
             </div>
           </div>
         </section>
