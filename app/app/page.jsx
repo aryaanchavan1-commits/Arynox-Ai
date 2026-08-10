@@ -131,6 +131,7 @@ export default function Home() {
   const [codeBusy, setCodeBusy] = useState(false);
   const [codeErr, setCodeErr] = useState("");
   const [agentOpen, setAgentOpen] = useState(false);
+  const [closedFolders, setClosedFolders] = useState(() => new Set());
   const previewUrl = () => `/api/preview${user?.token ? "?t=" + encodeURIComponent(user.token) : ""}`;
   const hasHtml = project.some((f) => /\.html?$/i.test(f.name));
 
@@ -461,27 +462,70 @@ export default function Home() {
     setRunOut("▶ Running project...");
     try {
       const out = [];
+      let ran = 0, skipped = 0;
       for (const f of project) {
         const language = f.name.toLowerCase().endsWith(".py") ? "python" : "javascript";
+        if (!/\.(js|jsx|ts|tsx|mjs|cjs|py)$/i.test(f.name)) { skipped++; continue; }
         out.push(`— ${f.name} (${language}) —`);
+        ran++;
         const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: f.code, language }), signal: AbortSignal.timeout(30000) });
         const d = await res.json();
         if (d.error) out.push("⛔ " + d.error);
         if (d.output) out.push(d.output);
         out.push("");
       }
-      setRunOut(out.join("\n") || "✓ Finished (no output)");
+      const htmlFiles = project.filter((f) => /\.html?$/i.test(f.name)).length;
+      out.push(`✓ Ran ${ran} file${ran === 1 ? "" : "s"}${skipped ? `, skipped ${skipped} non-code file${skipped === 1 ? "" : "s"}` : ""}.${htmlFiles ? " Open 🌐 Preview to see your website." : ""}`);
+      setRunOut(out.join("\n"));
     } catch (err) { setRunOut("Error: " + err.message); }
     finally { setRunning(false); }
   };
 
   const langOf = (name) => (name || "").toLowerCase().endsWith(".py") ? python() : javascript();
 
+  const ideTree = useMemo(() => {
+    const root = {};
+    project.forEach((f, i) => {
+      const parts = (f.name || "").split("/").filter(Boolean);
+      let node = root;
+      parts.slice(0, -1).forEach((p) => { node[p] = node[p] || {}; node = node[p]; });
+      (node._files = node._files || []).push(i);
+    });
+    return root;
+  }, [project]);
+
+  const renderFolder = (node, path, depth) => {
+    const rows = [];
+    for (const key of Object.keys(node)) {
+      if (key === "_files") continue;
+      const childPath = path ? path + "/" + key : key;
+      const closed = closedFolders.has(childPath);
+      rows.push(
+        <div className="ide-folder-row" key={childPath}>
+          <button className={`ide-folder ${closed ? "closed" : "open"}`} style={{ paddingLeft: 6 + depth * 14 }} onClick={() => setClosedFolders((prev) => { const n = new Set(prev); if (n.has(childPath)) n.delete(childPath); else n.add(childPath); return n; })}>
+            <span className="twist">{closed ? "▶" : "▼"}</span><span className="folder-icon">📁</span>{key}
+          </button>
+          {!closed && renderFolder(node[key], childPath, depth + 1)}
+        </div>
+      );
+    }
+    for (const i of node._files || []) {
+      const f = project[i];
+      rows.push(
+        <div className={`ide-file ${i === activeFile ? "active" : ""}`} key={"f" + i}>
+          <button className="ide-file-name" style={{ paddingLeft: 6 + depth * 14 }} title={f.name} onClick={() => setActiveFile(i)}>📄 {f.name.split("/").pop()}</button>
+          <button className="icon-btn" onClick={() => deleteFile(i)}>🗑</button>
+        </div>
+      );
+    }
+    return rows;
+  };
+
   const setFileCode = (i, code) => setProject((prev) => { const next = prev.map((f, j) => (j === i ? { ...f, code } : f)); save(KEY.project, next); return next; });
 
   const addFile = () => {
-    const name = (newFileName.trim() || "new-file.js").replace(/[^a-zA-Z0-9._-]/g, "_");
-    setProject((prev) => { const next = [...prev, { name, code: "// " + name + "\n\n" }]; save(KEY.project, next); return next; });
+    let name = (newFileName.trim() || "new-file.js").replace(/[^a-zA-Z0-9._/-]/g, "_").replace(/\.\./g, "");
+    setProject((prev) => { const next = [...prev, { name, code: "// " + name.split("/").pop() + "\n\n" }]; save(KEY.project, next); return next; });
     setActiveFile(project.length);
     setNewFileName("");
   };
@@ -502,11 +546,11 @@ export default function Home() {
     try {
       const items = [];
       for (const f of files) {
-        if (f.size > 512 * 1024) continue;
+        if (f.size > 2 * 1024 * 1024) continue;
         const rel = f.webkitRelativePath ? f.webkitRelativePath.split("/").slice(1).join("/") : f.name;
         items.push({ name: rel || f.name, code: await f.text() });
       }
-      if (!items.length) throw new Error("No readable files (each file must be under 500 KB)");
+      if (!items.length) throw new Error("No readable files (each file must be under 2 MB)");
       const res = await fetch("/api/upload-project", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -1216,7 +1260,7 @@ export default function Home() {
                 <button className="chip" title="Upload an entire project folder - the AI works on it" onClick={() => projectRef.current?.click()}>📁 Upload project</button>
                 <button className={`chip ${idePreview ? "on" : ""}`} onClick={() => setIdePreview(!idePreview)} title="Preview the website live">🌐 Preview</button>
                 <button className={`chip ${agentOpen ? "on" : ""}`} onClick={() => setAgentOpen(!agentOpen)} title="Talk to the AI coding agent">🤖 Agent</button>
-                <input className="file-name" placeholder="new-file.js" value={newFileName} onChange={(e) => setNewFileName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addFile(); }} />
+                <input className="file-name" placeholder="src/new-file.js" value={newFileName} onChange={(e) => setNewFileName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addFile(); }} />
                 <button className="chip" onClick={addFile}>＋ File</button>
                 <button className="chip" onClick={() => { setRunOut(""); }}>⌫ Clear</button>
                 <button className="chip" onClick={downloadProject}>⬇ ZIP</button>
@@ -1226,13 +1270,8 @@ export default function Home() {
             </header>
             <div className="ide-split">
               <div className="ide-files">
-                <div className="ide-files-head">Project files</div>
-                {project.map((f, i) => (
-                  <div className={`ide-file ${i === activeFile ? "active" : ""}`} key={i}>
-                    <button className="ide-file-name" onClick={() => setActiveFile(i)}>📄 {f.name}</button>
-                    <button className="icon-btn" onClick={() => deleteFile(i)}>🗑</button>
-                  </div>
-                ))}
+                <div className="ide-files-head">Project files <span className="file-count">{project.length}</span></div>
+                {project.length ? renderFolder(ideTree, "", 0) : <div className="ide-files-empty">No files yet — create one or ask the agent to build an app.</div>}
               </div>
               <div className="ide-editor-col">
                 <div className="ide-file-tab">

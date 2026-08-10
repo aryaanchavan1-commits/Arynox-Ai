@@ -328,6 +328,13 @@ html, body {
 .ide-file { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 8px; }
 .ide-file.active { background: rgba(201, 100, 66, 0.18); }
 .ide-file-name { flex: 1; text-align: left; background: none; border: none; color: var(--text); font-size: 13px; font-family: inherit; cursor: pointer; padding: 6px 8px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ide-file-name:hover { background: rgba(201, 100, 66, 0.12); }
+.ide-folder-row { display: flex; flex-direction: column; }
+.ide-folder { display: flex; align-items: center; gap: 5px; width: 100%; text-align: left; background: none; border: none; color: var(--faint); font-size: 12.5px; font-weight: 600; letter-spacing: 0.3px; font-family: inherit; cursor: pointer; padding: 5px 8px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ide-folder:hover { background: rgba(201, 100, 66, 0.1); color: var(--text); }
+.ide-folder .twist { width: 12px; font-size: 10px; color: var(--faint); }
+.file-count { background: rgba(201, 100, 66, 0.25); color: var(--text); border-radius: 10px; padding: 1px 7px; font-size: 10.5px; margin-left: 6px; }
+.ide-files-empty { font-size: 12px; color: var(--faint); padding: 8px 6px; }
 .ide-editor-col { flex: 1.4; min-width: 0; display: flex; flex-direction: column; }
 .ide-file-tab { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .editor-wrap { flex: 1; min-height: 0; overflow: hidden; }
