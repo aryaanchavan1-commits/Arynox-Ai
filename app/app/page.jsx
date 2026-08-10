@@ -14,6 +14,8 @@ const KEY = { memory: "arynox_memory", history: "arynox_history", project: "aryn
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
+const IS_MOBILE = typeof navigator !== "undefined" && (/Mobi|Android|iPhone|iPad|Tablet/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 0 && window.innerWidth < 900));
+
 const GEN_RE = /\b(generate|create|draw|make|imagine|render|picture|image|photo|art of|बनाओ|बना|तस्वीर|चित्र|ड्रा|छवि)\b/i;
 const DEFAULT_PROJECT = [
   { name: "main.js", code: "// Welcome to Arynox Code!\n// Write JavaScript, press Run, and watch the output.\n// Click 🤖 Agent to ask the AI to build or fix things.\n\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n\nconsole.log(greet(\"Aryan\"));\n" },
@@ -172,6 +174,7 @@ export default function Home() {
   const lastDetectAtRef = useRef(0);
   const lastAlertRef = useRef("");
   const deviceWatchRef = useRef(false);
+  const facingRef = useRef("");
   const [usage, setUsage] = useState(null);
   const [waTpl, setWaTpl] = useState(null);
   const [waBusy, setWaBusy] = useState(false);
@@ -1150,10 +1153,33 @@ export default function Home() {
     } catch { return []; }
   };
 
-  const startCamera = async (deviceId) => {
+  const startCamera = async (deviceId, facing = "") => {
+    const attempts = [];
+    if (deviceId) {
+      attempts.push({ width: { ideal: 1280 }, height: { ideal: 720 }, deviceId: { exact: deviceId } });
+      attempts.push({ deviceId: { exact: deviceId } });
+    } else if (facing) {
+      attempts.push({ width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: { ideal: facing } });
+      attempts.push({ facingMode: { ideal: facing } });
+    } else {
+      attempts.push({ width: { ideal: 1280 }, height: { ideal: 720 } });
+      attempts.push({ width: { ideal: 640 }, height: { ideal: 480 } });
+    }
+    attempts.push(true);
+    let stream = null;
+    let lastErr = null;
+    for (const video of attempts) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video });
+        break;
+      } catch (err) { lastErr = err; }
+    }
+    if (!stream) {
+      const msg = String(lastErr?.name || "");
+      showToast(msg.includes("NotAllowed") ? "👁 camera blocked — click 🔒 in the address bar and allow camera, then retry" : msg.includes("NotFound") ? "👁 no camera found on this device" : msg.includes("NotReadable") ? "👁 camera is busy in another app — close it and retry" : "👁 could not open camera — retry or check browser settings");
+      return;
+    }
     try {
-      const video = deviceId ? { width: { ideal: 1280, min: 640 }, height: { ideal: 720, min: 480 }, deviceId: { exact: deviceId } } : { width: { ideal: 1280, min: 640 }, height: { ideal: 720, min: 480 } };
-      const stream = await navigator.mediaDevices.getUserMedia({ video });
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
@@ -1169,7 +1195,7 @@ export default function Home() {
         deviceWatchRef.current = true;
         navigator.mediaDevices?.addEventListener("devicechange", onDevicesChanged);
       }
-    } catch { showToast("👁 camera blocked — allow access in the browser"); }
+    } catch { showToast("👁 could not start the video preview — retry"); }
   };
 
   const onDevicesChanged = async () => {
@@ -1195,9 +1221,24 @@ export default function Home() {
   const flipCamera = async () => {
     let cams = camDevices;
     if (!cams.length) cams = await loadCameras();
-    if (cams.length < 2) { showToast("📷 only one camera found — add another to switch"); return; }
+    if (cams.length < 2) {
+      if (IS_MOBILE) {
+        const nextFacing = facingRef.current === "user" ? "environment" : "user";
+        facingRef.current = nextFacing;
+        showToast(`📷 switching to the ${nextFacing === "environment" ? "back" : "front"} camera`);
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        clearInterval(detectTimer.current);
+        detectTimer.current = null;
+        await startCamera("", nextFacing);
+        return;
+      }
+      showToast("📷 only one camera found — add another to switch");
+      return;
+    }
     const idx = Math.max(0, cams.findIndex((d) => d.id === activeCamId));
     const next = cams[(idx + 1) % cams.length];
+    facingRef.current = "";
     await switchCamera(next.id);
   };
 
@@ -1861,7 +1902,7 @@ export default function Home() {
                 {camOn && <button className="chip" onClick={() => setVoiceAlerts((v) => !v)} title="Spoken vehicle alerts">{voiceAlerts ? "🔊" : "🔇"} <span className="cam-toggle-label">{voiceAlerts ? "Alerts on" : "Alerts off"}</span></button>}
                 {camOn && <button className="chip" onClick={() => setDetectPaused((p) => !p)}>{detectPaused ? "▶ Resume" : "⏸ Pause"}</button>}
                 {kioskOn ? <button className="chip cam-off" onClick={kioskStop}>🧑🤝🧑 Stop visitor mode</button> : <button className="chip cam-on" onClick={kioskStart}>🧑🤝🧑 Visitor mode</button>}
-                {camOn ? <button className="chip cam-off" onClick={stopCamera}>■ Stop</button> : <button className="chip cam-on" onClick={startCamera}>● Start seeing</button>}
+                {camOn ? <button className="chip cam-off" onClick={stopCamera}>■ Stop</button> : <button className="chip cam-on" onClick={() => startCamera("", IS_MOBILE ? "environment" : "")}>● Start seeing</button>}
               </div>
             </header>
             <div className="cam-stage">
@@ -1880,7 +1921,7 @@ export default function Home() {
                     <span>👁</span>
                     <p className="cam-place-title">See the world live</p>
                     <p>Press <b>Start seeing</b> and I will detect <b>people, vehicles, animals, objects and documents</b> in real time — on your device. Watch a live dashboard, ask questions, get spoken answers (Sarvam AI voice) and live web data. Works with every camera — plug any in and detection keeps running.</p>
-                    <button className="send-btn cam-big" onClick={startCamera}>● Start seeing</button>
+                    <button className="send-btn cam-big" onClick={() => startCamera("", IS_MOBILE ? "environment" : "")}>● Start seeing</button>
                   </div>
                 )}
                 {camOn && objects.length > 0 && (

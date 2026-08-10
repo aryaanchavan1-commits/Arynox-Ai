@@ -951,7 +951,7 @@ html { scroll-behavior: smooth; }
 .engine-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .engine-row .chip { font-size: 11.5px; padding: 5px 10px; opacity: 0.75; }
 .engine-row .chip.engine-on { opacity: 1; border-color: #7c5cff !important; color: #b9a6ff !important; background: rgba(124, 92, 255, 0.16) !important; box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.35); }
-.dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 8px; margin: 4px 0 10px; }
+.dash-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 4px 0 10px; }
 .dash-cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .dash-cell i { font-style: normal; font-size: 15px; }
 .dash-cell b { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1066,4 +1066,38 @@ html { scroll-behavior: smooth; }
   .live-ask-head em { display: none; }
   .settings-modal { max-width: 94vw; }
   .settings-modal .auth-tabs { overflow-x: auto; }
+}
+
+/* ---------- UX fixes: camera scroll/clipping, toggle wrap, mobile flow ---------- */
+body { overflow-x: hidden; }
+.toggles { flex-wrap: wrap; }
+.topbar { flex-wrap: wrap; }
+.detect-panel { overflow-y: auto; }
+.detect-list { flex-shrink: 0; }
+@media (max-width: 860px) {
+  .cam-toggles { justify-content: flex-start; }
+  .cam-stage { overflow-y: auto; }
+  .cam-frame { flex: none; min-height: 240px; aspect-ratio: 4 / 3; height: auto; }
+  .detect-panel { max-height: none; }
+  .landing-steps { grid-template-columns: 1fr; max-width: 480px; }
+  .landing-nav { padding: 10px 14px; gap: 10px; }
+  .landing-btn.big { padding: 12px 22px; font-size: 15px; }
+}
+@media (max-width: 640px) {
+  .landing-plans { grid-template-columns: 1fr; max-width: 480px; }
+}
+@media (max-width: 560px) {
+  .cam-frame { min-height: 220px; }
+  .cam-toggles .chip { font-size: 11.5px; padding: 5px 9px; }
+  .topbar { padding: 8px 10px; gap: 6px; }
+  .status { font-size: 12px; }
+  .live-replies { max-height: 180px; }
+  .voice-providers { grid-template-columns: 1fr 1fr; }
+  .dash-cell { padding: 7px 8px; }
+  .dash-cell i { font-size: 13px; }
+  .dash-cell b { font-size: 12px; }
+  .dash-cell em { font-size: 10px; }
+  .rail-nav button { padding: 6px 8px; }
+  .rail-foot button { padding: 6px 8px; }
+  .user-chip { padding: 4px 6px !important; }
 }
