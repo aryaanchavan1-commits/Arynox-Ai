@@ -142,7 +142,8 @@ export default function Home() {
   const [mcpInfo, setMcpInfo] = useState([]);
   const [mcpBusy, setMcpBusy] = useState(false);
   const [autoLog, setAutoLog] = useState([]);
-  const [autoRunning, setAutoRunning] = useState("");
+  const [autoBusy, setAutoBusy] = useState({});
+  const autoLogRef = useRef(null);
   const [busyStep, setBusyStep] = useState(0);
 
   const BUSY_STEPS = ["Thinking…", "Working…", "Researching…", "Coding…", "Running…", "Finalizing…"];
@@ -332,6 +333,16 @@ export default function Home() {
     const iv = setInterval(ping, 540000);
     return () => clearInterval(iv);
   }, []);
+  useEffect(() => {
+    if (tab !== "auto") return;
+    refreshUsage();
+  }, [tab]);
+
+  useEffect(() => {
+    const el = autoLogRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [autoLog]);
+
   useEffect(() => {
     const coarse = window.matchMedia("(pointer: coarse)").matches;
     endRef.current?.scrollIntoView({ behavior: coarse ? "auto" : "smooth", block: "end" });
@@ -698,6 +709,8 @@ export default function Home() {
 
   const langOf = (name) => (name || "").toLowerCase().endsWith(".py") ? python() : javascript();
 
+  const editorExt = useMemo(() => [langOf(activeFile ? project.find((f) => f.name === activeFile)?.name : "")], [activeFile, project]);
+
   const ideTree = useMemo(() => {
     const root = {};
     project.forEach((f, i) => {
@@ -785,16 +798,27 @@ export default function Home() {
   };
 
   const runAutomation = async (action, params) => {
-    setAutoRunning(action);
-    setAutoLog((prev) => [...prev, `▶ ${action}...`]);
+    const key = `${action}:${Date.now()}`;
+    setAutoBusy((prev) => ({ ...prev, [key]: true }));
+    const push = (line) => setAutoLog((prev) => [...prev.slice(-79), { t: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }), line }]);
+    push(`▶ ${action}${params?.query ? ` "${params.query}"` : ""}${params?.repo ? ` (${params.repo})` : ""}${params?.to ? ` → ${params.to}` : ""}…`);
     try {
       const res = await fetch("/api/automation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, params, creds }), signal: AbortSignal.timeout(60000) });
       const d = await res.json();
-      setAutoLog((prev) => [...prev, res.ok && d.ok ? `✓ ${d.result}` : `✗ ${d.error || res.status}`]);
-      if (res.ok && d.ok) speak(d.result.slice(0, 300), "en");
-    } catch (err) { setAutoLog((prev) => [...prev, "✗ " + err.message]); }
-    finally { setAutoRunning(""); }
+      if (res.ok && d.ok) {
+        push(`✓ ${d.result}`);
+        showToast(`✅ ${action} done`);
+        speak(d.result.slice(0, 300), "en");
+      } else {
+        push(`✗ ${(d.error || "failed")}`);
+      }
+    } catch (err) { push(`✗ ${err.message}`); }
+    finally { setAutoBusy((prev) => { const n = { ...prev }; delete n[key]; return n; }); }
+    if (action.startsWith("github")) trackUsage("github");
+    if (action.startsWith("gmail")) trackUsage("email");
+    if (action === "http_call") trackUsage("web");
   };
+  const busyKey = (action) => Object.keys(autoBusy).find((k) => k.startsWith(action + ":")) || "";
 
   const send = async (textOverride) => {
     const text = (textOverride ?? input).trim();
@@ -1725,11 +1749,9 @@ export default function Home() {
     setCred("mcpServers", next);
   };
 
-  const removeMcpServer = (i) => {
-    const next = [...(creds.mcpServers || [])];
-    next.splice(i, 1);
-    setCred("mcpServers", next);
-    setMcpInfo([]);
+  const removeMcpServer = (name) => {
+    setCred("mcpServers", (creds.mcpServers || []).filter((s) => s.name !== name));
+    setMcpInfo((prev) => prev.filter((x) => x.name !== name));
   };
 
   const refreshMcp = async () => {
@@ -2036,7 +2058,7 @@ export default function Home() {
                   <button className="chip" onClick={() => runCode(file?.code || "", file?.name)}>▶ Run this file</button>
                 </div>
                 <div className="editor-wrap">
-                  <CodeMirror value={file?.code || ""} height="100%" theme={oneDark} extensions={[langOf(file?.name)]} onChange={(v) => setFileCode(activeFile, v)} />
+                  <CodeMirror value={file?.code || ""} height="100%" theme={oneDark} extensions={editorExt} onChange={(v) => setFileCode(activeFile, v)} />
                 </div>
               </div>
               <div className="console">
@@ -2261,7 +2283,13 @@ export default function Home() {
         {tab === "auto" && (
           <div className="auto">
             <header className="topbar">
-              <div className="brand"><span className="dot" /><span className="status">Automations — connect your accounts & run actions</span></div>
+              <div className="brand"><span className={`dot ${Object.keys(autoBusy).length ? "busy" : ""}`} /><span className="status">Automations — connect your accounts & run actions</span></div>
+              {Object.keys(autoBusy).length > 0 && (
+                <div className="auto-runner">
+                  <span className="runner-spin" />
+                  {Object.keys(autoBusy)[0].split(":")[0]} — running…
+                </div>
+              )}
             </header>
             <div className="auto-body">
               <div className="auto-card guide-card">
@@ -2345,9 +2373,9 @@ export default function Home() {
                     <input className="auto-input" type="password" placeholder="Personal Access Token (fine-grained or classic)"
                       value={creds.githubToken} onChange={(e) => setCred("githubToken", e.target.value)} />
                     <div className="auto-actions">
-                      <button className="chip" disabled={autoRunning !== ""} onClick={() => runAutomation("github_search", { query: "arynox" })}>🔎 Test search</button>
-                      <button className="chip" disabled={autoRunning !== ""} onClick={() => runAutomation("github_search", { query: prompt("Search GitHub for:", "react") || "react" })}>Search repos</button>
-                      <button className="chip" disabled={autoRunning !== ""} onClick={() => { const repo = prompt("Repo (owner/name):", "vercel/next.js"); if (repo) runAutomation("github_issues", { repo }); }}>Open issues</button>
+                      <button className="chip" disabled={busyKey("github_search") !== ""} onClick={() => runAutomation("github_search", { query: "arynox" })}>{busyKey("github_search") ? "⏳" : "🔎"} Test search</button>
+                      <button className="chip" disabled={busyKey("github_search") !== ""} onClick={() => runAutomation("github_search", { query: prompt("Search GitHub for:", "react") || "react" })}>Search repos</button>
+                      <button className="chip" disabled={busyKey("github_issues") !== ""} onClick={() => { const repo = prompt("Repo (owner/name):", "vercel/next.js"); if (repo) runAutomation("github_issues", { repo }); }}>Open issues</button>
                       <button className="chip" onClick={() => setGuideOpen("github")}>❓ How to get a token</button>
                     </div>
                   </div>
@@ -2356,7 +2384,7 @@ export default function Home() {
                     <input className="auto-input" placeholder="Your Gmail address" value={creds.gmailUser} onChange={(e) => setCred("gmailUser", e.target.value)} />
                     <input className="auto-input" type="password" placeholder="App Password (Google > App passwords)" value={creds.gmailPass} onChange={(e) => setCred("gmailPass", e.target.value)} />
                     <div className="auto-actions">
-                      <button className="chip" disabled={autoRunning !== ""} onClick={() => { const to = prompt("Send to:", creds.gmailUser); if (to) runAutomation("gmail_send", { to, subject: "Test from Arynox AI", body: "Hello! This is a test email sent by Arynox AI. 🚀" }); }}>✉️ Send test email</button>
+                      <button className="chip" disabled={busyKey("gmail_send") !== ""} onClick={() => { const to = prompt("Send to:", creds.gmailUser); if (to) runAutomation("gmail_send", { to, subject: "Test from Arynox AI", body: "Hello! This is a test email sent by Arynox AI. 🚀" }); }}>{busyKey("gmail_send") ? "⏳" : "✉️"} Send test email</button>
                       <button className="chip" onClick={() => setGuideOpen("gmail")}>❓ How to get an app password</button>
                     </div>
                     <p className="auto-note">Use a Gmail App Password (not your normal password). Enable 2-Step Verification first.</p>
@@ -2368,24 +2396,37 @@ export default function Home() {
                     <p className="auto-note">Connect other apps (GitHub, Gmail, Slack, Notion, databases...) via any MCP server. The AI can then list and call their tools from chat.</p>
                     <div className="mcp-list">
                       {!creds.mcpServers?.length && !creds.mcpUrl && <div className="mem-empty">No servers connected yet.</div>}
-                      {creds.mcpServers?.map((s, i) => (
-                        <div className="mcp-row" key={i}>
-                          <div className="mcp-row-main">
-                            <b>{s.name}</b>
-                            <span className="mcp-row-url">{s.url}</span>
-                            {mcpInfo[i]?.error && <span className="mcp-err">✗ {mcpInfo[i].error}</span>}
-                            {!mcpInfo[i]?.error && mcpInfo[i] && (
-                              <span className="mcp-ok">✓ {mcpInfo[i].tools.length} tools</span>
-                            )}
+                      {creds.mcpServers?.map((s) => {
+                        const st = mcpInfo.find((x) => x.name === s.name);
+                        return (
+                          <div className="mcp-row" key={s.name}>
+                            <div className="mcp-row-main">
+                              <b>{s.name}</b>
+                              <span className="mcp-row-url">{s.url}</span>
+                              {st?.error && <span className="mcp-err">✗ {st.error}</span>}
+                              {!st?.error && st && <span className="mcp-ok">✓ {st.tools.length} tools</span>}
+                              {!st && !mcpBusy && <span className="mcp-err">? not tested</span>}
+                            </div>
+                            <div className="mcp-row-actions">
+                              <button className="icon-btn" title="Test server" disabled={mcpBusy} onClick={async () => {
+                                setMcpBusy(true);
+                                try {
+                                  const res = await fetch("/api/mcp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", creds: { ...creds, mcpServers: [s] } }), signal: AbortSignal.timeout(20000) });
+                                  const d = await res.json();
+                                  setMcpInfo((prev) => [...prev.filter((x) => x.name !== s.name), ...(res.ok ? d.servers || [] : [{ name: s.name, tools: [], error: d.error || "failed" }])]);
+                                } catch (err) { setMcpInfo((prev) => [...prev.filter((x) => x.name !== s.name), { name: s.name, tools: [], error: err.message }]); }
+                                finally { setMcpBusy(false); }
+                              }}>🔄</button>
+                              <button className="icon-btn" title="Remove" onClick={() => removeMcpServer(s.name)}>🗑</button>
+                            </div>
                           </div>
-                          <button className="icon-btn" title="Remove" onClick={() => removeMcpServer(i)}>🗑</button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     <div className="auto-actions">
                       <button className="chip" disabled={mcpBusy} onClick={refreshMcp}>{mcpBusy ? "Discovering..." : "🔍 Discover tools"}</button>
                       <button className="chip" disabled={mcpBusy} onClick={addMcpServer}>＋ Add server</button>
-                      <button className="chip" disabled={mcpBusy} onClick={() => { const tool = prompt("MCP tool name:"); const server = prompt("Server name (or leave blank for first):") || ""; if (tool) runAutomation("mcp_call", { server, tool, params: {} }); }}>🔌 Call MCP tool</button>
+                      <button className="chip" disabled={mcpBusy} onClick={() => { const tool = prompt("MCP tool name (e.g. get_stock_price):"); const server = prompt("Server name (or blank for first):") || ""; const raw = prompt("JSON params (e.g. {\"symbol\":\"TSLA\"}):", "{}"); if (tool) runAutomation("mcp_call", { server, tool, params: (() => { try { return JSON.parse(raw || "{}"); } catch { return {}; } })() }); }}>🔌 Call MCP tool</button>
                       <button className="chip" onClick={() => setGuideOpen("mcp")}>❓ How to add a server</button>
                     </div>
                     {mcpInfo.filter((s) => !s.error).length > 0 && (
@@ -2438,7 +2479,11 @@ export default function Home() {
               </div>
               <div className="auto-log">
                 <div className="auto-log-head">Run log</div>
-                <pre className="auto-log-body">{(autoLog.length ? autoLog : ["// Run an automation above to see the result here."]).join("\n")}</pre>
+                <div className="auto-log-body" ref={autoLogRef}>
+                  {(autoLog.length ? autoLog : [{ t: "", line: "// Run an automation above to see the result here." }]).map((e, i) => (
+                    <div className="auto-log-row" key={i}><span className="auto-log-time">{e.t}</span><span className={`auto-log-line ${e.line.startsWith("✓") ? "ok" : e.line.startsWith("✗") ? "err" : ""}`}>{e.line}</span></div>
+                  ))}
+                </div>
                 <button className="chip" onClick={() => setAutoLog([])}>⌫ Clear log</button>
               </div>
             </div>

@@ -105,7 +105,7 @@ void main() {
     vec2 q2 = m + (b - m) * 2.0;
     vec2 prev = a;
     float step = 0.08;
-    for (int s = 0; s < 14; s++) {
+    for (int s = 0; s < 9; s++) {
       float f = float(s) * step;
       vec2 c1 = mix(mix(a, q1, f), mix(q1, q2, f), f);
       float g = f + step;
@@ -181,7 +181,7 @@ export default function Backdrop({ tab, dark }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const gl = canvas.getContext("webgl", { antialias: false, alpha: false, powerPreference: "low-power" });
+    const gl = canvas.getContext("webgl", { antialias: false, alpha: false, powerPreference: "low-power", desynchronized: true });
     if (!gl) {
       canvas.parentElement?.classList.add("backdrop-static");
       return;
@@ -250,9 +250,15 @@ export default function Backdrop({ tab, dark }) {
     }
 
     const resize = () => {
-      const dpr = quality === "high" ? Math.min(window.devicePixelRatio || 1, 1.75) : 1;
-      const w = Math.max(2, Math.floor(canvas.clientWidth * dpr));
-      const h = Math.max(2, Math.floor(canvas.clientHeight * dpr));
+      const MAX_PIXELS = 2200000;
+      let dpr = quality === "high" ? Math.min(window.devicePixelRatio || 1, 1.75) : 1;
+      let w = Math.max(2, Math.floor(canvas.clientWidth * dpr));
+      let h = Math.max(2, Math.floor(canvas.clientHeight * dpr));
+      if (w * h > MAX_PIXELS) {
+        const s = Math.sqrt(MAX_PIXELS / (w * h));
+        w = Math.max(2, Math.floor(w * s));
+        h = Math.max(2, Math.floor(h * s));
+      }
       if (canvas.width !== w || canvas.height !== h) {
         canvas.width = w;
         canvas.height = h;
@@ -330,7 +336,6 @@ gl.useProgram(a.p);
   return (
     <div className={`backdrop ${dark ? "backdrop-dark" : "backdrop-light"}`} aria-hidden="true">
       <canvas ref={canvasRef} />
-      <div className="backdrop-grain" />
     </div>
   );
 }

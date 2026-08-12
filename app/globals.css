@@ -565,8 +565,25 @@ html, body {
   padding: 10px 16px; font-size: 12.5px; font-weight: 700; letter-spacing: 0.4px;
   color: #5fb8d8; border-bottom: 1px solid var(--border); background: rgba(0, 212, 255, 0.06);
 }
-.auto-log-body { margin: 0; padding: 16px; max-height: 240px; overflow: auto; font-family: Consolas, monospace; font-size: 13px; line-height: 1.6; color: #c8f4ff; white-space: pre-wrap; }
+.auto-log-body { margin: 0; padding: 10px 14px; max-height: 240px; overflow: auto; font-family: Consolas, monospace; font-size: 13px; line-height: 1.6; color: #c8f4ff; }
+.auto-log-row { display: flex; gap: 10px; padding: 2px 0; }
+.auto-log-time { color: #6b8296; flex: none; font-size: 12px; padding-top: 1px; }
+.auto-log-line { white-space: pre-wrap; word-break: break-word; }
+.auto-log-line.ok { color: #7be3a3; }
+.auto-log-line.err { color: #ff9d9d; }
 .auto-log .chip { align-self: flex-start; margin: 10px 14px; }
+.auto-runner {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600;
+  color: #7be3a3; background: rgba(74, 222, 128, 0.1); border: 1px solid rgba(74, 222, 128, 0.35);
+  padding: 6px 12px; border-radius: 999px;
+}
+.runner-spin {
+  width: 12px; height: 12px; border-radius: 50%; flex: none;
+  border: 2px solid rgba(74, 222, 128, 0.3); border-top-color: #7be3a3;
+  animation: runner-rot 0.8s linear infinite;
+}
+@keyframes runner-rot { to { transform: rotate(360deg); } }
+.mcp-row-actions { display: flex; gap: 6px; }
 
 .user-chip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 7px 10px !important; }
 .user-avatar {
@@ -1092,7 +1109,8 @@ html { scroll-behavior: smooth; }
 .usage-empty { display: flex; flex-direction: column; gap: 12px; }
 
 /* ---------- Automation: usage mini + WhatsApp templates ---------- */
-.auto-strip { display: flex; flex-direction: column; gap: 12px; }
+.auto-strip { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 12px; align-items: start; }
+@media (max-width: 1100px) { .auto-strip { grid-template-columns: 1fr; } }
 .usage-mini-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
 .usage-mini-tile {
   display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px;
@@ -1444,7 +1462,7 @@ body { overflow-x: hidden; }
 }
 
 /* ============================================================
-   PREMIUM PASS — animated backdrop, glass, glow, motion
+   PREMIUM PASS ï¿½ animated backdrop, glass, glow, motion
    ============================================================ */
 
 /* ---------- Animated backdrop ---------- */
@@ -1454,10 +1472,6 @@ body { overflow-x: hidden; }
   background: var(--bg);
 }
 .backdrop canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.backdrop-grain {
-  position: absolute; inset: 0; opacity: 0.05; mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
-}
 .backdrop-static canvas { display: none; }
 .backdrop-static {
   background:
@@ -1562,8 +1576,7 @@ body { overflow-x: hidden; }
   color: #fff;
 }
 .msg.assistant .msg-body {
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 6px 16px;
@@ -1615,27 +1628,25 @@ body { overflow-x: hidden; }
 }
 @keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(0.97); } }
 
-/* ---------- Auto cards / IDE panels glass ---------- */
+/* ---------- Auto cards / IDE panels (solid translucent â€” no blur, keeps scroll fast) ---------- */
 .auto-card, .ide-files, .console, .detect-panel, .guide-card {
-  background: color-mix(in srgb, var(--surface) 62%, transparent);
-  backdrop-filter: blur(18px) saturate(1.2);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border-color: var(--border);
 }
 
 /* ---------- Reduced motion & weak devices ---------- */
 @media (prefers-reduced-motion: reduce) {
   .welcome-logo, .main > * { animation: none; }
-  .backdrop-grain { display: none; }
 }
 @media (max-width: 900px), (pointer: coarse) {
-  .rail, .memory, .msg.assistant .msg-body, .composer-box, .auto-card, .ide-files, .console, .detect-panel, .guide-card {
+  .rail, .memory, .composer-box {
     backdrop-filter: none; -webkit-backdrop-filter: none;
   }
   .rail { background: color-mix(in srgb, var(--bg) 92%, transparent); }
-  .msg.assistant .msg-body, .composer-box { background: color-mix(in srgb, var(--surface) 92%, transparent); }
+  .composer-box { background: color-mix(in srgb, var(--surface) 92%, transparent); }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .rail, .memory, .composer-box, .msg.assistant .msg-body, .auto-card, .ide-files, .console, .detect-panel, .guide-card {
+  .rail, .memory, .composer-box {
     backdrop-filter: none; -webkit-backdrop-filter: none;
   }
 }
