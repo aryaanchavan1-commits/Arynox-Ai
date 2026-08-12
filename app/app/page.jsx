@@ -10,6 +10,7 @@ import { classify } from "@/lib/intent";
 import { sb } from "@/lib/supabase-client";
 import { BASE_INR, COUNTRY_CURRENCY, CURRENCIES, detectRegion, getRates, priceFor } from "@/lib/currency";
 import VideoStudio from "@/components/VideoStudio";
+import AdminPanel from "@/components/AdminPanel";
 
 const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos", code: "arynox_code_msgs", voice: "arynox_voice" };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -221,14 +222,11 @@ export default function Home() {
   };
   const [adminToken, setAdminToken] = useState(() => load("arynox_admin", null));
   const [adminOpen, setAdminOpen] = useState(false);
+  const [adminDashOpen, setAdminDashOpen] = useState(false);
   const [adminUser, setAdminUser] = useState("");
   const [adminPass, setAdminPass] = useState("");
   const [adminLoginBusy, setAdminLoginBusy] = useState(false);
   const [adminLoginErr, setAdminLoginErr] = useState("");
-  const [adminTab, setAdminTab] = useState("grants");
-  const [usersList, setUsersList] = useState([]);
-  const [keysList, setKeysList] = useState([]);
-  const [keysBusy, setKeysBusy] = useState(false);
   const [visitors, setVisitors] = useState(() => load("arynox_visitors", []));
   const [kioskOn, setKioskOn] = useState(false);
   const [kioskStep, setKioskStep] = useState("off"); // off | idle | ask_name | ask_looking | guiding | done
@@ -236,10 +234,6 @@ export default function Home() {
   const [kioskName, setKioskName] = useState("");
   const [kioskLooking, setKioskLooking] = useState("");
   const [kioskBusy, setKioskBusy] = useState(false);
-  const [adminEmail, setAdminEmail] = useState("");
-  const [adminDays, setAdminDays] = useState(30);
-  const [adminList, setAdminList] = useState([]);
-  const [adminBusy, setAdminBusy] = useState(false);
 
   const audioRef = useRef(null);
   const endRef = useRef(null);
@@ -280,26 +274,10 @@ export default function Home() {
       setMe((prev) => ({ ...prev, isAdmin: true }));
       setAdminOpen(false);
       setAdminUser(""); setAdminPass("");
-      setUpgradeOpen(true);
-      setTimeout(refreshAdminPanel, 50);
-      showToast("🛡 Admin panel unlocked");
+      setAdminDashOpen(true);
+      showToast("🛡 Welcome, admin");
     } catch (err) { setAdminLoginErr(err.message); }
     finally { setAdminLoginBusy(false); }
-  };
-
-  const adminAct = async (action, extra = {}) => {
-    setAdminBusy(true);
-    try {
-      const h = { "Content-Type": "application/json", ...(me.isAdmin ? authHeaders() : adminHeaders()) };
-      const res = await fetch("/api/admin", { method: "POST", headers: h, body: JSON.stringify({ action, ...extra }), signal: AbortSignal.timeout(30000) });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || "failed");
-      if (d.users) setUsersList(d.users);
-      if (d.list) setAdminList(d.list);
-      if (d.result) showToast(d.result);
-      return d;
-    } catch (err) { showToast("⚠️ " + err.message); return null; }
-    finally { setAdminBusy(false); }
   };
 
   const showToast = (t) => {
@@ -405,22 +383,17 @@ export default function Home() {
   const adminHeaders = () => (adminToken ? { Authorization: `Bearer ${adminToken}` } : {});
   const adminMode = me.isAdmin || !!adminToken;
 
-  const refreshAdminPanel = async () => {
-    if (!adminMode) return;
-    setAdminBusy(true);
-    try {
-      const h = { "Content-Type": "application/json", ...(me.isAdmin ? authHeaders() : adminHeaders()) };
-      const [u, k, g] = await Promise.all([
-        fetch("/api/admin", { method: "POST", headers: h, body: JSON.stringify({ action: "users" }) }).then((r) => r.json()),
-        fetch("/api/admin", { method: "POST", headers: h, body: JSON.stringify({ action: "keys" }) }).then((r) => r.json()),
-        fetch("/api/admin", { method: "POST", headers: h, body: JSON.stringify({ action: "list" }) }).then((r) => r.json()),
-      ]);
-      if (u.ok) setUsersList(u.users || []);
-      if (k.ok) setKeysList(k.keys || []);
-      if (g.ok) setAdminList(g.list || []);
-    } catch {}
-    finally { setAdminBusy(false); }
-  };
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        if (adminMode) setAdminDashOpen(true);
+        else setAdminOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [adminMode]);
 
   useEffect(() => {
     if (!user?.token) return;
@@ -1853,7 +1826,7 @@ export default function Home() {
             <button className="install-btn" onClick={installApp} title="Install Arynox AI as an app">📲<span>Install</span></button>
           )}
           <button className={`upgrade-btn ${me.premium ? "premium" : ""}`} onClick={() => setUpgradeOpen(true)}>💎<span>{me.premium ? "Pro active" : "Upgrade"}</span></button>
-          <button className="upgrade-btn" onClick={() => { if (adminMode) { setUpgradeOpen(true); setTimeout(refreshAdminPanel, 50); } else setAdminOpen(true); }} title="Admin panel">🛡<span>Admin</span></button>
+          {adminMode && <button className="upgrade-btn" onClick={() => setAdminDashOpen(true)} title="Admin dashboard (Ctrl+Shift+A)">🛡<span>Admin</span></button>}
           <button className="upgrade-btn" onClick={() => { setSettingsTab("voice"); setSettingsOpen(true); refreshUsage(); }} title="Settings — voice & usage">⚙<span>Settings</span></button>
           {user ? (
             <button className="user-chip" onClick={signOut} title="Signed in - click to sign out">
@@ -2622,152 +2595,34 @@ export default function Home() {
         <div className="modal" onClick={() => setUpgradeOpen(false)}>
           <div className="auth-modal" onClick={(e) => e.stopPropagation()}>
             <div className="auth-head">
-              <span>{adminMode ? "🛡 Admin panel" : "💎 Arynox Pro"}</span>
+              <span>💎 Arynox Pro</span>
               <div className="admin-head-actions">
-                {adminMode && <button className="chip" onClick={refreshAdminPanel}>{adminBusy ? "Refreshing…" : "↺ Refresh"}</button>}
-                {adminToken && <button className="icon-btn" title="Log out of admin" onClick={() => { setAdminToken(null); save("arynox_admin", null); setMe((prev) => ({ ...prev, isAdmin: false })); showToast("Admin session closed"); }}>🚪</button>}
                 <button className="icon-btn" onClick={() => setUpgradeOpen(false)}>✕</button>
               </div>
             </div>
             <div className="auth-body">
-              {adminMode ? (
-                <>
-                  <div className="admin-tabs">
-                    <button className={`chip ${adminTab === "grants" ? "on" : ""}`} onClick={() => setAdminTab("grants")}>💎 Access</button>
-                    <button className={`chip ${adminTab === "users" ? "on" : ""}`} onClick={() => setAdminTab("users")}>👥 Users</button>
-                    <button className={`chip ${adminTab === "settings" ? "on" : ""}`} onClick={() => setAdminTab("settings")}>🔧 Keys & connections</button>
-                  </div>
-
-                  {adminTab === "grants" && (
-                    <div className="admin-panel">
-                      <div className="admin-title">💎 Grant Pro access</div>
-                      <div className="admin-row">
-                        <input className="auto-input" placeholder="person@email.com" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
-                        <input className="auto-input admin-days" type="number" min="1" max="3650" value={adminDays} onChange={(e) => setAdminDays(Number(e.target.value) || 30)} title="Days of access" />
-                        <button className="chip" disabled={adminBusy} onClick={async () => {
-                          if (!adminEmail.includes("@")) { showToast("⚠️ enter the person's email"); return; }
-                          const d = await adminAct("grant", { email: adminEmail.trim(), days: adminDays });
-                          if (d) setAdminEmail("");
-                        }}>{adminBusy ? "Granting…" : "💎 Grant"}</button>
-                      </div>
-                      <div className="admin-list">
-                        {adminList.length === 0 && <div className="detect-empty">No active grants yet.</div>}
-                        {adminList.map((p) => (
-                          <div className="admin-grant" key={p.email}>
-                            <span>{p.email}</span><em>until {new Date(p.until).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</em>
-                            <button className="icon-btn" title="Revoke" onClick={() => adminAct("revoke", { email: p.email })}>✕</button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="admin-title">📋 Visitors (from Live visitor mode)</div>
-                      <div className="admin-list">
-                        {visitors.length === 0 && <div className="detect-empty">No visitors recorded yet.</div>}
-                        {visitors.slice(0, 15).map((v, i) => (
-                          <div className="visitor-row" key={i}><span className="visitor-name">👤 {v.name}</span>{v.lookingFor ? <span className="visitor-need">🔍 {v.lookingFor}</span> : null}<em className="visitor-at">{v.at}</em></div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {adminTab === "users" && (
-                    <div className="admin-panel">
-                      <div className="admin-title">👥 Everyone who signed in</div>
-                      <div className="admin-list">
-                        {usersList.length === 0 && <div className="detect-empty">No users yet — when people sign in they appear here automatically.</div>}
-                        {usersList.map((u) => (
-                          <div className="admin-user" key={u.email}>
-                            <div className="admin-user-main">
-                              <b>{u.name || u.email}</b>
-                              <span className="admin-user-mail">{u.email}</span>
-                              <span className="admin-user-meta">last seen {new Date(u.lastSeen).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
-                            </div>
-                            <div className="admin-user-badges">
-                              {u.premium > 0 && <span className="badge badge-pro">💎 {Math.ceil((u.premium - Date.now()) / 86400000)}d</span>}
-                              {u.blocked && <span className="badge badge-block">🔒 blocked</span>}
-                            </div>
-                            <div className="admin-user-actions">
-                              <button className="chip" disabled={adminBusy} onClick={() => adminAct("grant", { email: u.email, days: 30 })}>💎 30d</button>
-                              {u.blocked
-                                ? <button className="chip" disabled={adminBusy} onClick={() => adminAct("unblock", { email: u.email })}>🔓 Unblock</button>
-                                : <button className="chip cam-off" disabled={adminBusy} onClick={() => adminAct("block", { email: u.email, name: u.name })}>🔒 Block</button>}
-                              <button className="icon-btn danger" title="Remove user" disabled={adminBusy} onClick={async () => {
-                                if (confirm(`Remove ${u.email} completely? This deletes their account and access.`)) await adminAct("remove", { email: u.email });
-                              }}>🗑</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="auto-note">Block = they cannot chat or build until unblocked. Remove = account deleted (needs SUPABASE_SECRET_KEY for full deletion) + premium revoked.</p>
-                    </div>
-                  )}
-
-                  {adminTab === "settings" && (
-                    <div className="admin-panel">
-                      <div className="admin-title">🔑 API keys & connections</div>
-                      <p className="auto-note">Saved here → active immediately. To make them permanent, download the .env below and paste it on Render & Vercel.</p>
-                      {keysList.map((k) => (
-                        <div className="key-row" key={k.key}>
-                          <label className="key-label">{k.key.replace(/_/g, " ")}{k.runtime ? <span className="badge badge-pro">runtime</span> : k.value ? <span className="badge badge-ok">set</span> : <span className="badge badge-miss">missing</span>}</label>
-                          <input className="auto-input" type={/PASS|TOKEN|KEY|SECRET/.test(k.key) ? "password" : "text"} value={k.value} placeholder={`${k.key}=`} onChange={(e) => {
-                            const v = e.target.value;
-                            setKeysList((prev) => prev.map((x) => (x.key === k.key ? { ...x, value: v } : x)));
-                          }} />
-                        </div>
-                      ))}
-                      <div className="admin-row" style={{ marginTop: 10 }}>
-                        <button className="chip" disabled={keysBusy} onClick={async () => {
-                          setKeysBusy(true);
-                          try {
-                            const h = { "Content-Type": "application/json", ...(me.isAdmin ? authHeaders() : adminHeaders()) };
-                            const res = await fetch("/api/admin", { method: "POST", headers: h, body: JSON.stringify({ action: "keys_set", keys: keysList.map((k) => ({ key: k.key, value: k.value })) }), signal: AbortSignal.timeout(20000) });
-                            const d = await res.json();
-                            if (!res.ok) throw new Error(d.error || "failed");
-                            showToast(d.result || "Settings saved");
-                            setKeysList(d.keys || keysList);
-                          } catch (err) { showToast("⚠️ " + err.message); }
-                          finally { setKeysBusy(false); }
-                        }}>{keysBusy ? "Saving…" : "💾 Save all"}</button>
-                        <button className="chip" disabled={keysBusy} onClick={async () => {
-                          try {
-                            const h = { "Content-Type": "application/json", ...(me.isAdmin ? authHeaders() : adminHeaders()) };
-                            const res = await fetch("/api/admin", { method: "POST", headers: h, body: JSON.stringify({ action: "env" }), signal: AbortSignal.timeout(20000) });
-                            const d = await res.json();
-                            if (!res.ok) throw new Error(d.error || "failed");
-                            const url = URL.createObjectURL(new Blob([d.env], { type: "text/plain" }));
-                            const a = document.createElement("a"); a.href = url; a.download = ".env"; a.click();
-                            URL.revokeObjectURL(url);
-                            showToast("📄 .env downloaded — paste into Render/Vercel to make permanent");
-                          } catch (err) { showToast("⚠️ " + err.message); }
-                        }}>📄 Download .env</button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="premium-banner off">You are on the <b>free plan</b> — everything you see works now.</div>
-                  <div className="plan-price">{pxRates ? `${pxInfo.cur.symbol}${pxInfo.pro.amount}` : "…"}<span>/month</span></div>
-                  <div className="plan-currency">
-                    <span>{(pxRegion?.flag || "🌍")} {(pxRegion?.name || "detecting region")} — auto-converted from ₹{BASE_INR}</span>
-                    <select value={pxCur} onChange={(e) => setPxCurSaved(e.target.value)} aria-label="Choose currency">
-                      <option value="auto">Auto currency</option>
-                      {CURRENCIES.map((c) => (
-                        <option key={c.code} value={c.code}>{c.flag} {c.name} ({c.code})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <ul className="plan-features">
-                    <li>⚡ Faster models with unlimited deep research</li>
-                    <li>💬 WhatsApp bot for your own business number</li>
-                    <li>🏨 Concierge mode with booking & invoice flows</li>
-                    <li>📁 Bigger workspaces & longer projects</li>
-                    <li>⭐ Priority support in Marathi / Hindi / English</li>
-                  </ul>
-                  <button className="send-btn" style={{ width: "100%" }} onClick={() => { setUpgradeOpen(false); showToast("🎉 you are on the waitlist — Pro launches soon"); }}>Join the waitlist</button>
-                  <p className="auto-note">Pro access is granted by the app owner. Ask them for a 💎 grant with your email.</p>
-                  <button className="chip admin-login-btn" onClick={() => setAdminOpen(true)}>🛡 Admin login</button>
-                </>
-              )}
+              <>
+                <div className="premium-banner off">You are on the <b>free plan</b> — everything you see works now.</div>
+                <div className="plan-price">{pxRates ? `${pxInfo.cur.symbol}${pxInfo.pro.amount}` : "…"}<span>/month</span></div>
+                <div className="plan-currency">
+                  <span>{(pxRegion?.flag || "🌍")} {(pxRegion?.name || "detecting region")} — auto-converted from ₹{BASE_INR}</span>
+                  <select value={pxCur} onChange={(e) => setPxCurSaved(e.target.value)} aria-label="Choose currency">
+                    <option value="auto">Auto currency</option>
+                    {CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.code}>{c.flag} {c.name} ({c.code})</option>
+                    ))}
+                  </select>
+                </div>
+                <ul className="plan-features">
+                  <li>⚡ Faster models with unlimited deep research</li>
+                  <li>💬 WhatsApp bot for your own business number</li>
+                  <li>🏨 Concierge mode with booking & invoice flows</li>
+                  <li>📁 Bigger workspaces & longer projects</li>
+                  <li>⭐ Priority support in Marathi / Hindi / English</li>
+                </ul>
+                <button className="send-btn" style={{ width: "100%" }} onClick={() => { setUpgradeOpen(false); showToast("🎉 you are on the waitlist — Pro launches soon"); }}>Join the waitlist</button>
+                <p className="auto-note">Pro access is granted by the app owner. Ask them for a 💎 grant with your email.</p>
+              </>
             </div>
           </div>
         </div>
@@ -2784,9 +2639,33 @@ export default function Home() {
               <input className="auto-input" placeholder="Username" value={adminUser} onChange={(e) => setAdminUser(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doAdminLogin(); }} />
               <input className="auto-input" type="password" placeholder="Password" value={adminPass} onChange={(e) => setAdminPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doAdminLogin(); }} />
               {adminLoginErr && <p className="auth-err">{adminLoginErr}</p>}
-              <button className="send-btn" style={{ width: "100%" }} disabled={adminLoginBusy} onClick={doAdminLogin}>{adminLoginBusy ? "Checking…" : "🛡 Unlock admin panel"}</button>
+              <button className="send-btn" style={{ width: "100%" }} disabled={adminLoginBusy} onClick={doAdminLogin}>{adminLoginBusy ? "Checking…" : "🛡 Unlock admin dashboard"}</button>
               <p className="auto-note">Only the app owner should have these credentials.</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {adminDashOpen && adminMode && (
+        <div className="modal ad-modal" onClick={() => setAdminDashOpen(false)}>
+          <div className="ad-wrap" onClick={(e) => e.stopPropagation()}>
+            <div className="ad-close">
+              <button
+                className="icon-btn"
+                title="Log out of admin"
+                onClick={() => {
+                  setAdminToken(null);
+                  save("arynox_admin", null);
+                  setMe((prev) => ({ ...prev, isAdmin: false }));
+                  setAdminDashOpen(false);
+                  showToast("Admin session closed");
+                }}
+              >
+                🚪
+              </button>
+              <button className="icon-btn" onClick={() => setAdminDashOpen(false)} title="Close">✕</button>
+            </div>
+            <AdminPanel headers={() => (me.isAdmin ? authHeaders() : adminHeaders())} onToast={showToast} />
           </div>
         </div>
       )}

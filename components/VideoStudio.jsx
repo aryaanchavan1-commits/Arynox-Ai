@@ -50,6 +50,10 @@ export default function VideoStudio({ onToast }) {
   const [status, setStatus] = useState("idle"); // idle | uploading | submitted | processing | done | error
   const [resultVideo, setResultVideo] = useState(null);
   const [error, setError] = useState("");
+  const [needsFunding, setNeedsFunding] = useState(false);
+  const [fundingUrl, setFundingUrl] = useState("https://www.hedra.com/develop/billing");
+
+  const FUNDING_HINT = /(insufficient|wallet|balance|funding|402|billing|credits)/i;
 
   const avatarInputRef = useRef(null);
   const audioInputRef = useRef(null);
@@ -68,10 +72,24 @@ export default function VideoStudio({ onToast }) {
     return data;
   }, []);
 
+  const IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
+  const AUDIO_TYPES = ["audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/m4a", "audio/mp4"];
+  const MAX_BYTES = 10 * 1024 * 1024;
+
+  const validateFile = (file, allowed, kind) => {
+    if (!file) return null;
+    if (!allowed.includes(file.type)) return `Use a ${kind} file (PNG, JPG or WebP for images / MP3, WAV or M4A for audio).`;
+    if (file.size > MAX_BYTES) return `${kind} is too large — max 10 MB.`;
+    return null;
+  };
+
   // ── Handle avatar image selection ──
   const onAvatarPick = (e) => {
     const f = e.target.files?.[0];
+    e.target.value = "";
     if (!f) return;
+    const err = validateFile(f, IMAGE_TYPES, "image");
+    if (err) { toast("⚠️ " + err); return; }
     setAvatarFile(f);
     setAvatarPreview(URL.createObjectURL(f));
     setAvatarUrl(null);
@@ -100,7 +118,10 @@ export default function VideoStudio({ onToast }) {
   // ── Handle audio selection ──
   const onAudioPick = (e) => {
     const f = e.target.files?.[0];
+    e.target.value = "";
     if (!f) return;
+    const err = validateFile(f, AUDIO_TYPES, "audio");
+    if (err) { toast("⚠️ " + err); return; }
     setAudioFile(f);
     setAudioPreview(URL.createObjectURL(f));
     setAudioUrl(null);
@@ -241,9 +262,15 @@ export default function VideoStudio({ onToast }) {
       startPolling(data.jobId);
     } catch (err) {
       setStatus("error");
-      setError(err.message);
+      const msg = String(err?.message || err || "");
+      setError(msg);
       setGenerating(false);
-      toast("Error: " + err.message);
+      if (FUNDING_HINT.test(msg)) {
+        setNeedsFunding(true);
+        const m = msg.match(/https:\/\/[^\s",]+/);
+        if (m) setFundingUrl(m[0]);
+      }
+      toast("Error: " + msg.slice(0, 160));
     }
   };
 
@@ -292,7 +319,12 @@ export default function VideoStudio({ onToast }) {
                 <input ref={avatarInputRef} type="file" accept="image/*" hidden onChange={onAvatarPick} />
               </>
             )}
-            {avatarPreview && <div className="studio-preview-label">Avatar ready ✓</div>}
+            {avatarPreview && (
+              <div className="studio-ready-row">
+                <span className="studio-preview-label">Avatar ready ✓</span>
+                <button className="chip" onClick={() => { setAvatarFile(null); setAvatarPreview(null); setAvatarUrl(null); setAvatarHedraUrl(null); }}>🗑 Clear</button>
+              </div>
+            )}
           </div>
 
           {/* ── Voice ── */}
@@ -305,6 +337,11 @@ export default function VideoStudio({ onToast }) {
               {audioPreview ? <div className="studio-audio-ready">🔊 Audio ready ✓<audio src={audioPreview} controls /></div> : <div className="studio-drop-place"><span>🎵</span><p>Click to upload audio</p><em>MP3, WAV, M4A</em></div>}
             </div>
             <input ref={audioInputRef} type="file" accept="audio/*" hidden onChange={onAudioPick} />
+            {audioPreview && (
+              <div className="studio-ready-row">
+                <span className="studio-audio-clear" onClick={() => { setAudioFile(null); setAudioPreview(null); setAudioUrl(null); setAudioHedraUrl(null); }}>🗑 Remove audio</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -361,7 +398,22 @@ export default function VideoStudio({ onToast }) {
                   </div>
                 </div>
               )}
-              {status === "error" && <p className="studio-error">⚠️ {error || "Something went wrong"}</p>}
+              {status === "error" && (
+                <div className="studio-error-box">
+                  <p className="studio-error">⚠️ {error || "Something went wrong"}</p>
+                  {needsFunding && (
+                    <div className="studio-fund">
+                      <b>API wallet needs funds</b>
+                      <p>Video generation is billed to your Hedra API wallet. Add a small balance, then try again — your avatar and audio are already prepared.</p>
+                      <div className="studio-result-actions">
+                        <a className="send-btn" href={fundingUrl} target="_blank" rel="noreferrer">💳 Add funds</a>
+                        <button className="chip" onClick={reset}>↺ Try again</button>
+                      </div>
+                    </div>
+                  )}
+                  {!needsFunding && <button className="chip" onClick={reset}>↺ Reset</button>}
+                </div>
+              )}
             </div>
           )}
         </div>

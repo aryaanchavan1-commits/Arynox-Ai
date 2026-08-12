@@ -19,7 +19,7 @@ export async function POST(req) {
     if (isAdminUser(username, password)) {
       attempts.delete(ip);
       const token = createAdminSession(username);
-      return Response.json({ ok: true, token, username, hint: "defaults: aryan / aryanadmin1 — change them in the admin panel" });
+      return Response.json({ ok: true, token, username });
     }
     attempts.set(ip, { count: (a?.count || 0) + 1, at: a?.at || Date.now() });
     return Response.json({ error: "Wrong username or password." }, { status: 401 });

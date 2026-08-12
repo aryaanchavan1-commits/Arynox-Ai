@@ -1,6 +1,6 @@
 import { getUserFromToken } from "@/lib/supabase";
 import { isAdminEmail, grantPremium, revokePremium, listPremium, listVisitors, clearVisitors, listUsers, blockUser, unblockUser, removeUser, trackUser } from "@/lib/access";
-import { verifyAdminSession, cfgList, setCfg, envDump } from "@/lib/config";
+import { verifyAdminSession, cfgList, setCfg, envDump, cfg, isAdminUser } from "@/lib/config";
 import { SUPABASE_SECRET_KEY, SUPABASE_URL } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -81,6 +81,35 @@ export async function POST(req) {
       return Response.json({ ok: true, result: `Saved ${entries.length} setting(s) — active immediately`, keys: cfgList() });
     }
     if (action === "env") return Response.json({ ok: true, env: envDump() });
+
+    if (action === "stats") {
+      const all = listUsers();
+      const allVisitors = listVisitors("", true);
+      return Response.json({
+        ok: true,
+        stats: {
+          users: all.length,
+          premium: all.filter((u) => u.premium > 0).length,
+          blocked: all.filter((u) => u.blocked).length,
+          visitors: allVisitors.length,
+          grants: listPremium().length,
+          providers: cfgList().filter((k) => k.value).map((k) => k.key),
+          uptime: Math.round(process.uptime()),
+          now: Date.now(),
+        },
+      });
+    }
+    if (action === "change_pass") {
+      const current = String(body?.current || "");
+      const next = String(body?.next || "");
+      if (next.length < 8) return Response.json({ error: "new password must be at least 8 characters" }, { status: 400 });
+      const creds = { username: cfg("ADMIN_USERNAME") || "aryan", password: cfg("ADMIN_PASSWORD") || "aryanadmin123" };
+      if (!isAdminUser(creds.username, current)) {
+        return Response.json({ error: "current password is wrong" }, { status: 401 });
+      }
+      setCfg("ADMIN_PASSWORD", next);
+      return Response.json({ ok: true, result: "Admin password updated — set ADMIN_PASSWORD in Vercel/Render to make it permanent" });
+    }
 
     return Response.json({ error: "unknown action" }, { status: 400 });
   } catch (err) {

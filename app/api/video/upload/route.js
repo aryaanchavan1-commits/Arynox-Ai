@@ -17,7 +17,7 @@ export async function POST(req) {
     }
     const buf = Buffer.from(await file.arrayBuffer());
     const result = await uploadFile(buf, file.name || "upload.bin", file.type || "application/octet-stream");
-    return Response.json({ url: result.url, asset_id: result.asset_id });
+    return Response.json({ url: result.url, content_type: result.content_type, expires_at: result.expires_at });
   } catch (err) {
     return Response.json({ error: String(err?.message || err).slice(0, 400) }, { status: 502 });
   }
