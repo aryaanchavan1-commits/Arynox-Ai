@@ -33,12 +33,14 @@ export default function VideoStudio({ onToast }) {
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarHedraUrl, setAvatarHedraUrl] = useState(null);
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
 
   // Audio (uploaded or TTS)
   const [audioPreview, setAudioPreview] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
   const [audioFile, setAudioFile] = useState(null);
+  const [audioHedraUrl, setAudioHedraUrl] = useState(null);
   const [generatingAudio, setGeneratingAudio] = useState(false);
 
   // Generation state
@@ -55,14 +57,15 @@ export default function VideoStudio({ onToast }) {
 
   const toast = (msg) => onToast && onToast(msg);
 
-  // ── Upload a file to Hedra, return its URL ──
+  // ── Upload a file to Hedra, return { url, content_type, expires_at } ──
   const uploadToHedra = useCallback(async (file) => {
     const form = new FormData();
     form.append("file", file);
     const res = await fetch("/api/video/upload", { method: "POST", body: form });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "upload failed");
-    return data.url;
+    if (!data.url) throw new Error("upload did not return a URL");
+    return data;
   }, []);
 
   // ── Handle avatar image selection ──
@@ -72,6 +75,7 @@ export default function VideoStudio({ onToast }) {
     setAvatarFile(f);
     setAvatarPreview(URL.createObjectURL(f));
     setAvatarUrl(null);
+    setAvatarHedraUrl(null);
   };
 
   // ── Generate avatar image from prompt ──
@@ -84,6 +88,7 @@ export default function VideoStudio({ onToast }) {
       if (!res.ok) throw new Error(data.error || "image generation failed");
       setAvatarUrl(data.url);
       setAvatarPreview(data.url);
+      setAvatarHedraUrl(null);
       toast("Avatar generated");
     } catch (err) {
       toast("Avatar gen failed: " + err.message);
@@ -99,6 +104,7 @@ export default function VideoStudio({ onToast }) {
     setAudioFile(f);
     setAudioPreview(URL.createObjectURL(f));
     setAudioUrl(null);
+    setAudioHedraUrl(null);
   };
 
   // ── Generate audio via TTS from script ──
@@ -113,6 +119,7 @@ export default function VideoStudio({ onToast }) {
       const url = URL.createObjectURL(blob);
       setAudioUrl(url);
       setAudioPreview(url);
+      setAudioHedraUrl(null);
       toast("Voice generated");
     } catch (err) {
       toast("Voice gen failed: " + err.message);
@@ -163,34 +170,53 @@ export default function VideoStudio({ onToast }) {
     setResultVideo(null);
     setProgress("");
 
-    // Resolve avatar URL
-    let finalImage = avatarUrl;
-    let finalAudio = audioUrl;
+    // Check we have a source for the avatar image and audio
+    const hasImage = avatarHedraUrl || avatarFile || avatarUrl;
+    const hasAudio = audioHedraUrl || audioFile || audioUrl;
 
     if (mode === "generate") {
-      if (!finalImage) { toast("Generate or upload an avatar image"); return; }
-      if (!finalAudio) { toast("Generate or upload audio"); return; }
+      if (!hasImage) { toast("Generate or upload an avatar image"); return; }
+      if (!hasAudio) { toast("Generate or upload audio"); return; }
     } else {
-      if (!avatarFile && !finalImage) { toast("Please add an avatar image"); return; }
-      if (!audioFile && !finalAudio) { toast("Please add audio"); return; }
+      if (!hasImage) { toast("Please add an avatar image"); return; }
+      if (!hasAudio) { toast("Please add audio"); return; }
     }
 
     setGenerating(true);
     setStatus("uploading");
     setProgress("Uploading to Hedra...");
 
+    // Fetch a URL as a File (for generated avatars / TTS audio blob URLs)
+    const urlToFile = async (url, fallbackName, fallbackType) => {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`could not download ${fallbackName}`);
+      const blob = await r.blob();
+      return new File([blob], fallbackName, { type: blob.type || fallbackType });
+    };
     try {
-      // Upload files to Hedra if not already URLs
-      if (!finalImage && avatarFile) {
-        finalImage = await uploadToHedra(avatarFile);
-        setAvatarUrl(finalImage);
+      let imgUrl = avatarHedraUrl;
+      let audUrl = audioHedraUrl;
+
+      if (!imgUrl) {
+        const src = avatarFile || (avatarUrl && (await urlToFile(avatarUrl, "avatar.png", "image/png")));
+        if (!src) throw new Error("no avatar image");
+        const up = await uploadToHedra(src);
+        if (!up || !up.url) throw new Error("image upload to Hedra failed");
+        setAvatarHedraUrl(up.url);
+        setAvatarUrl(up.url);
+        imgUrl = up.url;
       }
-      if (!finalAudio && audioFile) {
-        finalAudio = await uploadToHedra(audioFile);
-        setAudioUrl(finalAudio);
+      if (!audUrl) {
+        const src = audioFile || (audioUrl && (await urlToFile(audioUrl, "voice.mp3", "audio/mpeg")));
+        if (!src) throw new Error("no audio");
+        const up = await uploadToHedra(src);
+        if (!up || !up.url) throw new Error("audio upload to Hedra failed");
+        setAudioHedraUrl(up.url);
+        setAudioUrl(up.url);
+        audUrl = up.url;
       }
-      if (!finalImage) throw new Error("no avatar image");
-      if (!finalAudio) throw new Error("no audio");
+      if (!imgUrl) throw new Error("no avatar image");
+      if (!audUrl) throw new Error("no audio");
 
       setStatus("submitted");
       setProgress("Generating video...");
@@ -199,8 +225,8 @@ export default function VideoStudio({ onToast }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageUrl: finalImage,
-          audioUrl: finalAudio,
+          imageUrl: imgUrl,
+          audioUrl: audUrl,
           prompt: script || prompt || "A person speaking naturally and clearly.",
           aspect_ratio: aspectRatio,
           resolution,
