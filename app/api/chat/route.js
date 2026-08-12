@@ -39,6 +39,7 @@ export async function POST(req) {
     const memory = Array.isArray(body.memory) ? body.memory : [];
     const image = typeof body.image === "string" ? body.image : null;
     const business = body.business && typeof body.business === "object" ? body.business : null;
+    const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : null;
 
     const last = messages[messages.length - 1];
     const userText =
@@ -54,7 +55,7 @@ export async function POST(req) {
     }
     if (me?.email) trackUser(me.email, me.name);
 
-    const agentParams = { messages, memory, creds: body.creds || {}, owner, business };
+    const agentParams = { messages, memory, creds: body.creds || {}, owner, business, model };
 
     if (image) {
       const vis = await groqChat({ messages, image, memory });

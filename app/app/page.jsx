@@ -99,6 +99,10 @@ export default function Home() {
   const [genMode, setGenMode] = useState(false);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [toast, setToast] = useState("");
+  const [modelList, setModelList] = useState([]);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [modelQuery, setModelQuery] = useState("");
+  const [pickedModel, setPickedModel] = useState(() => load("arynox_model", null));
 
   const [showMemory, setShowMemory] = useState(false);
   const [newFact, setNewFact] = useState("");
@@ -315,6 +319,20 @@ export default function Home() {
   }, [theme, effectiveTheme]);
 
   useEffect(() => { setMemory(load(KEY.memory, [])); setMessages(load(KEY.history, [])); }, []);
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/models", { signal: AbortSignal.timeout(20000) });
+        const d = await r.json();
+        if (dead || !Array.isArray(d.models)) return;
+        const list = d.models.map((m) => ({ id: m.id, provider: m.provider || "", free: !!m.free, name: m.name || m.id }));
+        list.sort((a, b) => (a.free === b.free ? 0 : a.free ? -1 : 1));
+        setModelList(list);
+      } catch {}
+    })();
+    return () => { dead = true; };
+  }, []);
   useEffect(() => {
     const ping = () => { try { fetch("/api/ping").catch(() => {}); } catch {} };
     ping();
@@ -832,6 +850,7 @@ export default function Home() {
           image: image || null,
           creds,
           business,
+          model: pickedModel || null,
         }),
         signal: ctrl.signal,
       });
@@ -1962,7 +1981,34 @@ export default function Home() {
                   <button className="send-btn" disabled={!input.trim() || busy} onClick={() => send()}>➤</button>
                 </div>
                 <div className="composer-foot">
-                  <button className={`chip ${genMode ? "on" : ""}`} onClick={() => setGenMode(!genMode)}>✨ {genMode ? "Image mode on" : "Image mode"}</button>
+                  <div className="composer-left">
+                    <button className={`chip ${genMode ? "on" : ""}`} onClick={() => setGenMode(!genMode)}>✨ {genMode ? "Image mode on" : "Image mode"}</button>
+                    <div className="model-pick">
+                      <button className={`chip model-pick-btn ${modelOpen ? "on" : ""}`} onClick={() => setModelOpen(!modelOpen)} title="Choose the AI model">
+                        🧠 {modelList.length ? (pickedModel ? (modelList.find((m) => m.id === pickedModel)?.name || pickedModel) : "Auto") : "Auto"}
+                      </button>
+                      {modelOpen && (
+                        <div className="model-pop" onMouseLeave={() => setModelOpen(false)}>
+                          <div className="model-pop-head">Choose a model</div>
+                          <input className="model-search" placeholder="Search models…" value={modelQuery} onChange={(e) => setModelQuery(e.target.value)} autoFocus />
+                          <div className="model-pop-list">
+                            <button className={`model-row ${!pickedModel ? "sel" : ""}`} onClick={() => { setPickedModel(null); save("arynox_model", null); setModelOpen(false); }}>
+                              <span className="model-row-name">✨ Auto</span>
+                              <span className="model-badge model-badge-free">Best pick</span>
+                            </button>
+                            {modelList
+                              .filter((m) => !modelQuery || m.name.toLowerCase().includes(modelQuery.toLowerCase()) || m.id.toLowerCase().includes(modelQuery.toLowerCase()))
+                              .map((m) => (
+                                <button key={m.provider + "|" + m.id} className={`model-row ${pickedModel === m.id ? "sel" : ""}`} onClick={() => { setPickedModel(m.id); save("arynox_model", m.id); setModelOpen(false); }}>
+                                  <span className="model-row-name">{m.name}</span>
+                                  <span className={`model-badge ${m.free ? "model-badge-free" : "model-badge-pro"}`}>{m.free ? "Free" : "Pro"}</span>
+                                </button>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   <span className="composer-hint">{recording ? "listening..." : busy ? BUSY_STEPS[busyStep] : "Enter to send · Shift+Enter for a new line"}</span>
                   {busy && <button className="stop-btn" onClick={stopGeneration} title="Stop the agent">■ Stop</button>}
                 </div>
