@@ -1442,3 +1442,200 @@ body { overflow-x: hidden; }
   .ad-main { padding: 14px; }
   .ad-keys { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   PREMIUM PASS — animated backdrop, glass, glow, motion
+   ============================================================ */
+
+/* ---------- Animated backdrop ---------- */
+.backdrop {
+  position: fixed; inset: 0; z-index: 0;
+  pointer-events: none; overflow: hidden;
+  background: var(--bg);
+}
+.backdrop canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.backdrop-grain {
+  position: absolute; inset: 0; opacity: 0.05; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+.backdrop-static canvas { display: none; }
+.backdrop-static {
+  background:
+    radial-gradient(120% 90% at 15% 0%, rgba(200,118,74,0.16), transparent 55%),
+    radial-gradient(100% 80% at 85% 15%, rgba(130,92,143,0.14), transparent 60%),
+    radial-gradient(90% 90% at 50% 110%, rgba(64,89,140,0.14), transparent 55%),
+    var(--bg);
+}
+.backdrop-light.backdrop-static {
+  background:
+    radial-gradient(120% 90% at 15% 0%, rgba(184,100,58,0.10), transparent 55%),
+    radial-gradient(100% 80% at 85% 15%, rgba(148,106,160,0.09), transparent 60%),
+    radial-gradient(90% 90% at 50% 110%, rgba(107,133,178,0.10), transparent 55%),
+    var(--bg);
+}
+
+.app { position: relative; background: transparent; }
+.app > .rail, .app > .memory, .app > .main { position: relative; z-index: 1; }
+
+/* ---------- Glass surfaces ---------- */
+.rail {
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(22px) saturate(1.25);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  border-right: 1px solid var(--border);
+}
+.memory {
+  background: color-mix(in srgb, var(--panel) 74%, transparent);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+}
+.rail-brand { font-size: 16.5px; letter-spacing: -0.3px; }
+.rail-brand > span {
+  background: linear-gradient(90deg, var(--accent1), var(--accent2));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.rail-nav button.active, .rail-foot button.active {
+  background: linear-gradient(90deg, var(--glow2), var(--glow1));
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.new-chat-btn {
+  background: linear-gradient(135deg, var(--glow2), var(--glow1));
+  border-color: var(--border-strong);
+}
+.new-chat-btn:hover { border-color: var(--accent); box-shadow: 0 4px 18px var(--glow2); }
+
+/* ---------- Tab transitions ---------- */
+.main > * { animation: tabIn 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes tabIn { from { opacity: 0; transform: translateY(8px); } }
+
+/* ---------- Welcome hero ---------- */
+.welcome-logo {
+  width: 76px; height: 76px; margin: 0 auto 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 36px; color: #fff; border-radius: 24px;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  box-shadow: 0 0 0 1px var(--border-strong), 0 14px 44px var(--glow2);
+  animation: logoFloat 5s ease-in-out infinite;
+}
+@keyframes logoFloat { 50% { transform: translateY(-6px); box-shadow: 0 0 0 1px var(--border-strong), 0 22px 60px var(--glow2); } }
+.welcome-title {
+  font-size: 40px; font-weight: 650; letter-spacing: -1px; margin: 22px 0 10px;
+  background: linear-gradient(120deg, var(--text) 20%, var(--accent1) 60%, var(--accent2));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.welcome-tag { font-size: 16px; }
+.welcome-trust {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+  font-size: 12.5px; color: var(--faint);
+  background: var(--glow1); border: 1px solid var(--border);
+  padding: 6px 14px; border-radius: var(--radius-pill);
+}
+.sugg-card {
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+}
+.sugg-card:hover {
+  border-color: var(--accent); transform: translateY(-2px);
+  box-shadow: 0 10px 30px var(--glow1);
+}
+
+/* ---------- Chat polish ---------- */
+.msg { padding: 16px 20px; }
+.avatar {
+  width: 30px; height: 30px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  box-shadow: 0 4px 14px var(--glow2);
+}
+.msg.user .bubble {
+  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  border: none; color: #fff;
+  box-shadow: 0 8px 26px var(--glow2);
+  border-bottom-right-radius: 6px;
+}
+.msg.user .bubble b, .msg.user .bubble h1, .msg.user .bubble h2, .msg.user .bubble h3, .msg.user .bubble h4 { color: #fff; }
+.msg.user .bubble a { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
+.msg.user .bubble code { background: rgba(255,255,255,0.18); color: #fff; }
+.msg.user .bubble blockquote { background: rgba(255,255,255,0.1); border-left-color: rgba(255,255,255,0.75); color: rgba(255,255,255,0.92); }
+[data-theme="light"] .msg.user .bubble {
+  background: linear-gradient(135deg, #b8643a, #c8764a);
+  color: #fff;
+}
+.msg.assistant .msg-body {
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 6px 16px;
+  box-shadow: var(--shadow-soft);
+  transition: border-color 0.2s ease;
+}
+.msg.assistant .msg-body:hover { border-color: var(--border-strong); }
+.msg.assistant .bubble { background: transparent; border: none; }
+.bubble code {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid var(--border);
+}
+.bubble a { text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent1) 55%, transparent); }
+
+/* ---------- Composer glass ---------- */
+.composer {
+  background: linear-gradient(to top, color-mix(in srgb, var(--bg) 82%, transparent) 60%, transparent);
+}
+.composer-box {
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 14px 44px rgba(0,0,0,0.22), inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent);
+}
+.composer-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 16px 50px rgba(0,0,0,0.22);
+}
+.send-btn {
+  background: linear-gradient(135deg, var(--accent1), var(--accent2));
+  color: #fff;
+  box-shadow: 0 6px 18px var(--glow2);
+  transition: all 0.18s ease;
+}
+.send-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); box-shadow: 0 10px 26px var(--glow2); }
+.send-btn:disabled { opacity: 0.35; box-shadow: none; }
+
+/* ---------- Modals & toast ---------- */
+.modal { backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.auth-modal, .ad-wrap {
+  box-shadow: 0 30px 80px rgba(0,0,0,0.4), inset 0 1px 0 color-mix(in srgb, var(--text) 10%, transparent);
+  animation: modalIn 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes modalIn { from { opacity: 0; transform: translateY(14px) scale(0.985); } }
+.toast {
+  box-shadow: 0 14px 40px rgba(0,0,0,0.35), inset 0 0 0 1px var(--border-strong);
+  animation: toastIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(0.97); } }
+
+/* ---------- Auto cards / IDE panels glass ---------- */
+.auto-card, .ide-files, .console, .detect-panel, .guide-card {
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+
+/* ---------- Reduced motion & weak devices ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .welcome-logo, .main > * { animation: none; }
+  .backdrop-grain { display: none; }
+}
+@media (max-width: 900px), (pointer: coarse) {
+  .rail, .memory, .msg.assistant .msg-body, .composer-box, .auto-card, .ide-files, .console, .detect-panel, .guide-card {
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .rail { background: color-mix(in srgb, var(--bg) 92%, transparent); }
+  .msg.assistant .msg-body, .composer-box { background: color-mix(in srgb, var(--surface) 92%, transparent); }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .rail, .memory, .composer-box, .msg.assistant .msg-body, .auto-card, .ide-files, .console, .detect-panel, .guide-card {
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+}

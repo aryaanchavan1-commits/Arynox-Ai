@@ -11,6 +11,7 @@ import { sb } from "@/lib/supabase-client";
 import { BASE_INR, COUNTRY_CURRENCY, CURRENCIES, detectRegion, getRates, priceFor } from "@/lib/currency";
 import VideoStudio from "@/components/VideoStudio";
 import AdminPanel from "@/components/AdminPanel";
+import Backdrop from "@/components/Backdrop";
 
 const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos", code: "arynox_code_msgs", voice: "arynox_voice" };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -23,7 +24,17 @@ const DEFAULT_PROJECT = [
   { name: "main.js", code: "// Welcome to Arynox Code!\n// Write JavaScript, press Run, and watch the output.\n// Click 🤖 Agent to ask the AI to build or fix things.\n\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n\nconsole.log(greet(\"Aryan\"));\n" },
 ];
 
-function escapeHtml(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function escapeHtml(s) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+function mdUrlSafe(s) {
+  return s.replace(/[^\x21-\x7e]/g, "").replace(/[\"'<>\\ ]/g, "");
+}
 function md(s) {
   return escapeHtml(s)
     .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
@@ -39,7 +50,11 @@ function md(s) {
       const tag = m.includes('class="num"') ? "ol" : "ul";
       return `<${tag} class="md-list">` + m.replace(/\n/g, "").replace(/ class="num"/g, "") + `</${tag}>`;
     })
-    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer"><img class="generated md-img" src="$2" alt="$1" loading="lazy"/></a>')
+    .replace(/!\[([^\]]*)\]\(((?:https?:)?\/\/[^)\s]+)\)/g, (m, alt, url) => {
+      const safeUrl = mdUrlSafe(url);
+      if (!/^https?:\/\//i.test(safeUrl)) return m;
+      return `<a href="${safeUrl}" target="_blank" rel="noreferrer"><img class="generated md-img" src="${safeUrl}" alt="${(alt || "image").slice(0, 200)}" loading="lazy"/></a>`;
+    })
     .replace(/(^|[\s(])(https?:\/\/[^\s<>")\]]+)/g, '$1<a href="$2" target="_blank" rel="noreferrer">$2</a>')
     .replace(/\n\n/g, "<br/>");
 }
@@ -1797,6 +1812,7 @@ export default function Home() {
 
   return (
     <div className="app">
+      <Backdrop tab={tab} dark={effectiveTheme === "dark"} />
       <nav className="rail">
         <div className="rail-head">
           <div className="rail-brand">✦<span>Arynox AI</span></div>
