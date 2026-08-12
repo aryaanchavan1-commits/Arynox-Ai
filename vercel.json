@@ -1,0 +1,17 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "installCommand": "npm install",
+  "regions": ["bom1"],
+  "functions": {
+    "app/api/video/generate/route.js": {
+      "maxDuration": 30
+    },
+    "app/api/video/upload/route.js": {
+      "maxDuration": 30
+    },
+    "app/api/video/status/**/route.js": {
+      "maxDuration": 15
+    }
+  }
+}

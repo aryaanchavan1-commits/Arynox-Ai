@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
@@ -9,6 +9,7 @@ import JSZip from "jszip";
 import { classify } from "@/lib/intent";
 import { sb } from "@/lib/supabase-client";
 import { BASE_INR, COUNTRY_CURRENCY, CURRENCIES, detectRegion, getRates, priceFor } from "@/lib/currency";
+import VideoStudio from "@/components/VideoStudio";
 
 const KEY = { memory: "arynox_memory", history: "arynox_history", project: "arynox_project", theme: "arynox_theme", creds: "arynox_creds", session: "arynox_session", business: "arynox_business", convos: "arynox_convos", code: "arynox_code_msgs", voice: "arynox_voice" };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -160,6 +161,8 @@ export default function Home() {
   const [voiceAlerts, setVoiceAlerts] = useState(true);
   const [liveAsk, setLiveAsk] = useState("");
   const [liveBusy, setLiveBusy] = useState(false);
+  const [liveVoice, setLiveVoice] = useState(false);
+  const [liveListening, setLiveListening] = useState(false);
   const [liveReplies, setLiveReplies] = useState([]);
   const [watchMode, setWatchMode] = useState(false);
   const [watchSecs, setWatchSecs] = useState(30);
@@ -250,7 +253,11 @@ export default function Home() {
   const watchTimer = useRef(null);
   const lastVehicleSpeak = useRef(0);
   const liveBusyRef = useRef(false);
+  const liveVoiceRef = useRef(false);
+  const liveListenRef = useRef(false);
   const aiVisionRef = useRef(false);
+  const camOnRef = useRef(false);
+  const detectPausedRef = useRef(false);
   const tickRef = useRef(0);
   const toastTimer = useRef(null);
   const abortRef = useRef(null);
@@ -591,9 +598,12 @@ export default function Home() {
       const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: res.headers.get("content-type") || "audio/mpeg" }));
       const a = new Audio(url);
       audioRef.current = a;
-      a.onended = () => setSpeaking(false);
-      a.onerror = () => setSpeaking(false);
-      await a.play();
+      return new Promise((resolve) => {
+        const done = () => { setSpeaking(false); resolve(); };
+        a.onended = done;
+        a.onerror = done;
+        a.play().catch(done);
+      });
     } catch { setSpeaking(false); }
   };
 
@@ -1153,7 +1163,9 @@ export default function Home() {
     } catch { return []; }
   };
 
-  const startCamera = async (deviceId, facing = "") => {
+  const startCamera = async (deviceId, facing = "", force = false) => {
+    const cur = streamRef.current?.getVideoTracks?.()[0];
+    if (!force && camOnRef.current && cur && cur.readyState === "live") return;
     const attempts = [];
     if (deviceId) {
       attempts.push({ width: { ideal: 1280 }, height: { ideal: 720 }, deviceId: { exact: deviceId } });
@@ -1184,6 +1196,8 @@ export default function Home() {
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setCamOn(true); setObjects([]); setBoxes([]); setDocs([]); setVehicleAlert(null); setDetectPaused(false);
+      camOnRef.current = true;
+      detectPausedRef.current = false;
       setAiFailed(false);
       loadCameras(stream.getVideoTracks()[0]?.getSettings()?.deviceId || deviceId);
       import("@/lib/detect")
@@ -1201,7 +1215,7 @@ export default function Home() {
   const onDevicesChanged = async () => {
     const list = await loadCameras();
     showToast(`📷 camera devices changed — ${list.length} available`);
-    if (streamRef.current && activeCamId && !list.some((d) => d.id === activeCamId)) {
+    if (streamRef.current && activeCamId && list.length > 0 && !list.some((d) => d.id === activeCamId)) {
       const first = list[0];
       if (first) await switchCamera(first.id);
     }
@@ -1214,7 +1228,7 @@ export default function Home() {
       streamRef.current = null;
       clearInterval(detectTimer.current);
       detectTimer.current = null;
-      await startCamera(deviceId);
+      await startCamera(deviceId, "", true);
     } catch { showToast("📷 could not switch to that camera"); }
   };
 
@@ -1243,6 +1257,7 @@ export default function Home() {
   };
 
   const stopCamera = () => {
+    camOnRef.current = false;
     setCamOn(false); setObjects([]); setBoxes([]); setDocs([]); setVehicleAlert(null);
     clearInterval(detectTimer.current);
     detectTimer.current = null;
@@ -1296,13 +1311,162 @@ export default function Home() {
       pushReply(text, { a: reply, t: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
       trackUsage("live_vision");
       setSessionAsks((n) => n + 1);
-      speak(reply, d.lang || "en");
+      await speak(reply, d.lang || "en");
     } catch (err) {
       pushReply(text, { a: "⚠ " + String(err?.message || err).slice(0, 200), t: "" });
     } finally { liveBusyRef.current = false; setLiveBusy(false); }
   };
 
   const lookCloser = () => askLive("Look at this scene very closely. Describe every important detail in 2-3 short sentences.");
+
+  // ── Human-like narration from LOCAL detections (instant, no cloud needed) ──
+  const lastNarratedSig = useRef("");
+  const lastNarratedAt = useRef(0);
+  const lastCloudDescribe = useRef(0);
+  const narrationBusy = useRef(false);
+
+  const narrateFromDetections = useCallback(() => {
+    if (!liveVoiceRef.current || narrationBusy.current || liveListenRef.current || liveBusyRef.current) return false;
+    const now = Date.now();
+    // Throttle: don't narrate more than once every 3.5 seconds
+    if (now - lastNarratedAt.current < 3500) return false;
+
+    const people = boxes.filter((b) => b.name === "person");
+    const vehs = boxes.filter((b) => VEHICLES.includes(b.name));
+    const things = objects.filter((o) => o.name !== "person" && !VEHICLES.includes(o.name));
+    const hasDoc = docs.length > 0;
+
+    // Build a signature of the current scene to detect changes
+    const sig = [
+      people.length,
+      vehs.map((v) => v.name).join(","),
+      things.map((t) => t.name + t.count).join(","),
+      docs.length,
+    ].join("|");
+
+    const changed = sig !== lastNarratedSig.current;
+    lastNarratedSig.current = sig;
+
+    // Speak when something changed, or every ~8s to keep the commentary alive, or every ~18s minimum
+    const speakInterval = changed ? 3500 : 8000;
+    if (now - lastNarratedAt.current < speakInterval) return false;
+    if (!people.length && !vehs.length && !things.length && !hasDoc) return false;
+
+    lastNarratedAt.current = now;
+    narrationBusy.current = true;
+
+    // Build natural, human-like commentary
+    const parts = [];
+    if (people.length) {
+      parts.push(people.length === 1 ? "there's a person here" : `I see ${people.length} people`);
+    }
+    vehs.forEach((v) => {
+      const label = VEHICLE_LABEL[v.name] || v.name;
+      parts.push(`a ${label} is in view`);
+    });
+    things.forEach((t) => {
+      parts.push(t.count > 1 ? `${t.count} ${t.name}s` : `a ${t.name}`);
+    });
+    if (hasDoc) parts.push(`a document${docs.length > 1 ? "s" : ""}`);
+
+    if (!parts.length) { narrationBusy.current = false; return false; }
+
+    // Vary the phrasing so it sounds alive, not robotic
+    const openers = ["", "Right now, ", "I can see ", "Looking around, ", "In front of me, "];
+    const opener = changed
+      ? ["", "Now ", "I notice ", "Looks like "][Math.floor(Math.random() * 4)]
+      : openers[Math.floor(Math.random() * openers.length)];
+
+    const text = opener + parts.join(", ") + ".";
+    speak(text, "en");
+
+    // Every ~25s, get a richer description from cloud vision for depth
+    if (now - lastCloudDescribe.current > 25000) {
+      lastCloudDescribe.current = now;
+      setTimeout(() => {
+        if (liveVoiceRef.current && !liveBusyRef.current) {
+          askLive("Describe this scene in 1-2 natural sentences as if you're telling a friend what you see. Mention anything interesting, new, or important.");
+        }
+      }, 2000);
+    }
+
+    setTimeout(() => { narrationBusy.current = false; }, 1500);
+    return true;
+  }, [boxes, objects, docs]);
+
+  // ── Speak phase: narrate what the camera sees (instant, from local detections) ──
+  const liveSpeakPhase = () => {
+    if (!liveVoiceRef.current || !camOnRef.current || liveBusyRef.current) return;
+    lastUserSpeech.current = Date.now();
+    // Instant narration from what we already detect locally
+    const spoke = narrateFromDetections();
+    // Whether or not there was something to say, move to listening
+    setTimeout(liveListenPhase, spoke ? 800 : 1500);
+  };
+
+  // ── Listen phase: wait for the user to speak (max 9s window) ──
+  const liveListenPhase = () => {
+    if (!liveVoiceRef.current || liveBusyRef.current || liveListenRef.current) return;
+    liveListenRef.current = true;
+    setLiveListening(true);
+    audioRef.current?.pause();
+    let resolved = false;
+    // Auto-stop listening after 9s if nobody speaks
+    liveListenTimer.current = setTimeout(() => {
+      if (resolved) return;
+      stopRecord();
+    }, 9000);
+    startRecord((text) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(liveListenTimer.current);
+      liveListenRef.current = false;
+      setLiveListening(false);
+      if (!liveVoiceRef.current) return;
+      const t = (text || "").trim();
+      if (!t) { setTimeout(liveSpeakPhase, 500); return; }
+      lastUserSpeech.current = Date.now();
+      askLive(t).finally(() => { if (liveVoiceRef.current) setTimeout(liveSpeakPhase, 400); });
+    });
+  };
+
+  const toggleLiveVoice = () => {
+    const next = !liveVoiceRef.current;
+    liveVoiceRef.current = next;
+    setLiveVoice(next);
+    if (next) {
+      if (watchMode) toggleWatch();
+      setLiveAsk("");
+      lastUserSpeech.current = Date.now();
+      showToast("🎧 Voice chat on — I'll keep watching and speaking out loud");
+      // Auto-start camera if it's off
+      if (!camOnRef.current) {
+        startCamera("", IS_MOBILE ? "environment" : "");
+        // Begin the speak→listen cycle once the camera is live
+        setTimeout(liveSpeakPhase, 1200);
+      } else {
+        setTimeout(liveSpeakPhase, 500);
+      }
+    } else {
+      stopRecord();
+      clearTimeout(liveListenTimer.current);
+      liveListenRef.current = false;
+      setLiveListening(false);
+      showToast("Voice chat off");
+    }
+  };
+
+  const liveTalk = () => {
+    if (liveBusyRef.current || liveVoiceRef.current) return;
+    audioRef.current?.pause();
+    // Auto-start camera if off so the AI can see
+    if (!camOnRef.current) startCamera("", IS_MOBILE ? "environment" : "");
+    startRecord((text) => {
+      const t = (text || "").trim();
+      if (!t) { showToast("🎤 didn't catch that — try again"); return; }
+      askLive(t);
+    });
+  };
 
   const startWatchTimer = () => {
     clearInterval(watchTimer.current);
@@ -1315,7 +1479,7 @@ export default function Home() {
     const next = !watchMode;
     setWatchMode(next);
     if (next) {
-      showToast(`👀 Watching mode on — I will look, think and speak every ${watchSecs} seconds`);
+      showToast("Watching mode on - I will look, think and speak every " + watchSecs + " seconds");
       askLive("You are my live eyes right now. Look at what is in front of me and tell me in 2 short sentences what is happening, and check the web for anything relevant to it right now.");
       startWatchTimer();
     } else {
@@ -1329,6 +1493,19 @@ export default function Home() {
     if (watchMode) startWatchTimer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchSecs]);
+
+  // Continuous human-like narration from local detections while voice chat is on
+  useEffect(() => {
+    if (!liveVoice || !camOn) return;
+    narrateFromDetections();
+  }, [objects, boxes, docs, liveVoice, camOn, narrateFromDetections]);
+
+  // Kick off narration shortly after camera turns on (when voice chat auto-starts it)
+  useEffect(() => {
+    if (!liveVoice || !camOn) return;
+    const t = setTimeout(narrateFromDetections, 2500);
+    return () => clearTimeout(t);
+  }, [camOn, liveVoice, narrateFromDetections]);
 
   const drawBoxes = (objs, docArr) => {
     const v = videoRef.current;
@@ -1344,7 +1521,7 @@ export default function Home() {
   };
 
   const detectFrame = async () => {
-    if (detecting || !camOn || detectPaused) return;
+    if (detecting || !camOnRef.current || detectPausedRef.current) return;
     const now = performance.now();
     if (lastDetectAtRef.current) fpsRef.current = 1000 / (now - lastDetectAtRef.current);
     lastDetectAtRef.current = now;
@@ -1414,7 +1591,7 @@ export default function Home() {
         const d = await res.json();
         if (res.ok) setObjects(d.objects || []);
       }
-    } catch { setDetectPaused(true); setTimeout(() => setDetectPaused(false), 15000); }
+    } catch (err) { detectPausedRef.current = true; setDetectPaused(true); setTimeout(() => { detectPausedRef.current = false; setDetectPaused(false); }, 15000); }
     finally { setDetecting(false); }
   };
 
@@ -1646,6 +1823,7 @@ export default function Home() {
           <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}>💬<span>Chat</span></button>
           <button className={tab === "ide" ? "active" : ""} onClick={() => setTab("ide")}>💻<span>Code</span></button>
           <button className={tab === "camera" ? "active" : ""} onClick={() => setTab("camera")}>👁<span>Live</span></button>
+          <button className={tab === "studio" ? "active" : ""} onClick={() => setTab("studio")}>🎬<span>Studio</span></button>
           <button className={tab === "auto" ? "active" : ""} onClick={() => setTab("auto")}>⚡<span>Automate</span></button>
         </div>
         <div className="rail-foot">
@@ -1933,6 +2111,13 @@ export default function Home() {
                     ))}
                   </div>
                 )}
+                {/* Prominent live "what I see" caption during voice chat */}
+                {camOn && liveVoice && (
+                  <div className="live-seeing-overlay">
+                    <div className="live-seeing-pulse" />
+                    <span>{objects.length > 0 ? "👁 seeing: " + objects.map((o) => o.name + (o.count > 1 ? ` ×${o.count}` : "")).join(", ") : "👁 watching…"}</span>
+                  </div>
+                )}
                 <div className="cam-legend">
                   <span><i className="lg-human" /> human</span>
                   <span><i className="lg-vehicle" /> vehicle</span>
@@ -1993,11 +2178,17 @@ export default function Home() {
                       <input className="live-ask-input" placeholder={liveBusy ? "Looking & thinking…" : "Ask about what I'm seeing…"} value={liveAsk}
                         onChange={(e) => setLiveAsk(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") askLive(); }} disabled={liveBusy} />
                       <button className="send-btn live-ask-btn" disabled={!liveAsk.trim() || liveBusy} onClick={() => askLive()}>➤</button>
+                      <button className={`send-btn live-ask-btn ${liveListening ? "mic-on" : ""}`} disabled={liveBusy} onClick={liveTalk} title="🎙️ Ask by voice">🎙️</button>
+                    </div>
+                    <div className="live-voice-status">
+                      {liveListening && <span>🎧 Listening… speak now</span>}
+                      {liveBusy && liveVoice && <span>💭 Thinking & speaking…</span>}
                     </div>
                     <div className="live-ask-hints">
                       <button className="chip" disabled={liveBusy} onClick={() => askLive("What am I looking at? Describe it in 2 short sentences.")}>👀 What do you see?</button>
                       <button className="chip" disabled={liveBusy} onClick={lookCloser}>🔍 Look closer</button>
                       <button className="chip" disabled={liveBusy} onClick={() => askLive("Look at this, check the web for the latest information about it, and tell me the newest details.")}>🔎 See + search web</button>
+                      <button className={`chip ${liveVoice ? "chip-active" : ""}`} disabled={liveBusy && !liveVoice} onClick={toggleLiveVoice}>{liveVoice ? "🛑 Stop voice chat" : "🎧 Voice chat"}</button>
                       <button className="chip" disabled={liveBusy} onClick={toggleWatch}>{watchMode ? "⏸ Stop watching" : `👀 Watch mode (${watchSecs}s)`}</button>
                     </div>
                     {liveBusy && <div className="typing" style={{ alignSelf: "flex-start" }}><span /><span /><span /></div>}
@@ -2029,6 +2220,8 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {tab === "studio" && <VideoStudio onToast={showToast} />}
 
         {tab === "auto" && (
           <div className="auto">
