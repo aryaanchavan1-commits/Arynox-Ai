@@ -1991,7 +1991,7 @@ export default function Home() {
                     {m.image && m.role === "user" ? <img className="attached" src={m.image} alt="attached" /> : null}
                     {m.role === "assistant" && m.image && /^https?:\/\//.test(m.image) ? (
                       <div className="gen-wrap">
-                        <a href={m.image} target="_blank" rel="noreferrer"><img className="generated" src={m.image} alt="generated" loading="lazy" /></a>
+                        <a href={m.image} target="_blank" rel="noreferrer"><img className="generated" src={m.image} alt="generated" loading="lazy" onError={() => showToast("🖼️ Image host is busy — the image may take a moment, or try again")} /></a>
                         <div className="gen-prompt">{m.content}</div>
                         <button className="chip" onClick={() => fetch(m.image).then((r) => r.blob()).then((b) => download("arynox-image.png", b))}>⬇ Download image</button>
                       </div>
