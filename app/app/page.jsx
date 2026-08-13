@@ -57,6 +57,17 @@ function md(s) {
     .replace(/(^|[\s(])(https?:\/\/[^\s<>")\]]+)/g, '$1<a href="$2" target="_blank" rel="noreferrer">$2</a>')
     .replace(/\n\n/g, "<br/>");
 }
+// Flattens markdown into clean speech-friendly text (keeps meaning, drops syntax)
+function flattenMd(s) {
+  return String(s || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[#*`>_~|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 700);
+}
 function parseBlocks(content) {
   const parts = [];
   const re = /```(\w*)\n?([\s\S]*?)```/g;
@@ -1369,6 +1380,24 @@ export default function Home() {
 
   const pushReply = (text, extra) => setLiveReplies((prev) => [...prev.slice(-9), { q: text, a: extra.a, t: extra.t || "" }]);
 
+  // ── Smart scene summary: turns raw detections into positional, human-readable context ──
+  const sceneSummaryText = useCallback(() => {
+    const parts = [];
+    const v = videoRef.current;
+    const w = Math.max(1, v?.videoWidth || 1280);
+    const h = Math.max(1, v?.videoHeight || 720);
+    for (const b of boxes) {
+      const label = VEHICLE_LABEL[b.name] || b.name;
+      if (!label) continue;
+      const cx = b.box[0] + b.box[2] / 2;
+      const place = cx < w * 0.33 ? "on the left" : cx > w * 0.66 ? "on the right" : "in the center";
+      const closeness = b.box[3] > h * 0.5 ? ", up close" : b.box[3] < h * 0.15 ? ", far away" : "";
+      parts.push(`${label}${closeness} ${place}`);
+    }
+    if (docs.length) parts.push(`${docs.length === 1 ? "a document" : `${docs.length} documents`} in view`);
+    return parts.length ? parts.join("; ") : "nothing noteworthy";
+  }, [boxes, docs]);
+
   const askLive = async (q) => {
     const v = videoRef.current;
     if (!v?.videoWidth) { showToast("👁 start the camera first"); return; }
@@ -1379,20 +1408,21 @@ export default function Home() {
     setLiveAsk("");
     try {
       const image = captureFrame(1600);
+      const sctx = sceneSummaryText();
       const history = liveReplies.slice(-6).flatMap((r) => [{ role: "user", content: r.q }, { role: "assistant", content: r.a }]);
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ messages: [{ role: "user", content: text }], memory: memory.slice(0, 20), image, business, history }),
+        body: JSON.stringify({ messages: [{ role: "user", content: text }], memory: memory.slice(0, 20), image, business, history, visionContext: sctx }),
         signal: AbortSignal.timeout(90000),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Live vision failed");
-      const reply = String(d.reply || "").replace(/[#*`]/g, "").slice(0, 700);
-      pushReply(text, { a: reply, t: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) });
+      const raw = String(d.reply || "").slice(0, 1200);
+      pushReply(text, { a: raw, t: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), blocks: parseBlocks(raw) });
       trackUsage("live_vision");
       setSessionAsks((n) => n + 1);
-      await speak(reply, d.lang || "en");
+      await speak(flattenMd(raw), d.lang || "en");
     } catch (err) {
       pushReply(text, { a: "⚠ " + String(err?.message || err).slice(0, 200), t: "" });
     } finally { liveBusyRef.current = false; setLiveBusy(false); }
@@ -1405,6 +1435,7 @@ export default function Home() {
   const lastNarratedAt = useRef(0);
   const lastCloudDescribe = useRef(0);
   const narrationBusy = useRef(false);
+  const lastBoxPos = useRef({});
 
   const narrateFromDetections = useCallback(() => {
     if (!liveVoiceRef.current || narrationBusy.current || liveListenRef.current || liveBusyRef.current) return false;
@@ -1436,19 +1467,29 @@ export default function Home() {
     lastNarratedAt.current = now;
     narrationBusy.current = true;
 
-    // Build natural, human-like commentary
+    // Build natural, human-like commentary: position-, movement- and context-aware
     const parts = [];
-    if (people.length) {
-      parts.push(people.length === 1 ? "there's a person here" : `I see ${people.length} people`);
-    }
-    vehs.forEach((v) => {
-      const label = VEHICLE_LABEL[v.name] || v.name;
+    const v = videoRef.current;
+    const w = Math.max(1, v?.videoWidth || 1280);
+    const h = Math.max(1, v?.videoHeight || 720);
+    const nowT = Date.now();
+    people.forEach((p) => {
+      const cx = p.box[0] + p.box[2] / 2;
+      const place = cx < w * 0.33 ? "on the left" : cx > w * 0.66 ? "on the right" : "in front of me";
+      const prev = lastBoxPos.current[p.name];
+      const moved = prev && Math.abs(prev.x - cx) > w * 0.05 && nowT - prev.t < 2500;
+      lastBoxPos.current[p.name] = { x: cx, t: nowT };
+      if (moved) parts.push(`someone is moving ${cx > prev.x ? "rightward" : "leftward"} ${place}`);
+      else parts.push(people.length === 1 ? `there's a person ${place}` : `a person ${place}`);
+    });
+    vehs.forEach((ve) => {
+      const label = VEHICLE_LABEL[ve.name] || ve.name;
       parts.push(`a ${label} is in view`);
     });
     things.forEach((t) => {
       parts.push(t.count > 1 ? `${t.count} ${t.name}s` : `a ${t.name}`);
     });
-    if (hasDoc) parts.push(`a document${docs.length > 1 ? "s" : ""}`);
+    if (hasDoc) parts.push(docs.length > 1 ? "and there are documents I can read for you" : "and there's a document I can read for you");
 
     if (!parts.length) { narrationBusy.current = false; return false; }
 
@@ -1458,11 +1499,19 @@ export default function Home() {
       ? ["", "Now ", "I notice ", "Looks like "][Math.floor(Math.random() * 4)]
       : openers[Math.floor(Math.random() * openers.length)];
 
-    const text = opener + parts.join(", ") + ".";
+    let text = opener + parts.join(", ") + ".";
+    // Guest-aware hello when a new person appears (only when the scene changed)
+    if (changed && people.length && business?.name?.trim()) {
+      text = `Welcome to ${business.name}! ${text}`;
+    }
+    // Offer to read documents when they just appeared — feels attentive, not robotic
+    if (changed && hasDoc) {
+      text += " Want me to read what's on screen?";
+    }
     speak(text, "en");
 
-    // Every ~25s, get a richer description from cloud vision for depth
-    if (now - lastCloudDescribe.current > 25000) {
+    // Every ~45s OR when the scene changed, get a richer description from cloud vision for depth
+    if ((now - lastCloudDescribe.current > 45000 || (changed && now - lastCloudDescribe.current > 15000)) && now - lastCloudDescribe.current > 8000) {
       lastCloudDescribe.current = now;
       setTimeout(() => {
         if (liveVoiceRef.current && !liveBusyRef.current) {
@@ -2275,7 +2324,13 @@ export default function Home() {
                         {liveReplies.map((r, i) => (
                           <div className="live-reply" key={i}>
                             <b>{r.t || ""}</b> {r.q && <em>“{r.q}”</em>}
-                            <p>{r.a}</p>
+                            <div className="live-reply-body">
+                              {r.blocks
+                                ? r.blocks.map((b, j) => b.type === "code"
+                                  ? <pre key={j} className="live-code"><code>{b.code}</code></pre>
+                                  : <span key={j} dangerouslySetInnerHTML={{ __html: b.html }} />)
+                                : <p>{r.a}</p>}
+                            </div>
                           </div>
                         ))}
                       </div>

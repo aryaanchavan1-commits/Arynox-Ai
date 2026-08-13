@@ -38,6 +38,7 @@ export async function POST(req) {
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const memory = Array.isArray(body.memory) ? body.memory : [];
     const image = typeof body.image === "string" ? body.image : null;
+    const visionContext = typeof body.visionContext === "string" ? body.visionContext.trim() : "";
     const business = body.business && typeof body.business === "object" ? body.business : null;
     const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : null;
 
@@ -58,17 +59,47 @@ export async function POST(req) {
     const agentParams = { messages, memory, creds: body.creds || {}, owner, business, model };
 
     if (image) {
-      const vis = await groqChat({ messages, image, memory });
-      if (!vis.reply) {
-        return Response.json(
-          { error: "Groq is rate-limited or unreachable right now. Try again in a minute." },
-          { status: 503 }
-        );
-      }
+      // Ground truth from on-device vision (Live camera detections), always available
+      const detGround = visionContext
+        ? ` On-device camera detections right now (from the live vision sensor, treat as ground truth): "${visionContext}"`
+        : "";
+      let vis = null;
       try {
+        vis = await groqChat({ messages, image, memory });
+      } catch {
+        vis = null; // Groq vision down -> don't die, the agent can still answer from detections
+      }
+      if (vis?.reply) {
+        try {
+          const augmented = [
+            ...messages,
+            { role: "user", content: `[The user attached the image shown above. Vision analysis of it (treat as ground truth): "${String(vis.reply).slice(0, 3000)}".${detGround}]` },
+          ];
+          const result = await runAgent({ ...agentParams, messages: augmented });
+          if (result.reply && !result.error) {
+            const newFacts = await extractMemory(userText, result.reply);
+            return Response.json({
+              reply: result.reply,
+              lang: result.lang || lang,
+              memory: newFacts,
+              model: result.model,
+              provider: result.provider || "",
+              tools: result.tools || [],
+              codeFiles: result.codeFiles || [],
+              files: result.files || [],
+              workspace: result.workspace || [],
+              suggestions: buildSuggestions(userText, result.tools),
+            });
+          }
+        } catch {}
+        const newFacts = await extractMemory(userText, vis.reply);
+        return Response.json({ reply: vis.reply, lang, memory: newFacts, model: vis.usedModel, provider: "groq", suggestions: buildSuggestions(userText, []) });
+      }
+      // Groq vision failed: answer from the live vision sensor instead of giving up
+      if (detGround) {
         const augmented = [
           ...messages,
-          { role: "user", content: `[The user attached the image shown above. Vision analysis of it (treat as ground truth): "${String(vis.reply).slice(0, 3000)}"]` },
+          { role: "user", content: `[I couldn't view the image itself, but my live vision sensor gives this ground truth of what is happening on camera right now: "${visionContext}". Use this, and if it doesn't answer the question, say so honestly and offer what you can help with.]` },
         ];
         const result = await runAgent({ ...agentParams, messages: augmented });
         if (result.reply && !result.error) {
@@ -86,9 +117,12 @@ export async function POST(req) {
             suggestions: buildSuggestions(userText, result.tools),
           });
         }
-      } catch {}
-      const newFacts = await extractMemory(userText, vis.reply);
-      return Response.json({ reply: vis.reply, lang, memory: newFacts, model: vis.usedModel, provider: "groq", suggestions: buildSuggestions(userText, []) });
+        return Response.json({ error: result.error || "Live vision is unavailable right now." }, { status: 503 });
+      }
+      return Response.json(
+        { error: "Groq is rate-limited or unreachable right now. Try again in a minute." },
+        { status: 503 }
+      );
     }
 
     const result = await runAgent(agentParams);
