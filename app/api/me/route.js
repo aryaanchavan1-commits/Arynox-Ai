@@ -1,5 +1,5 @@
 import { getUserFromToken } from "@/lib/supabase";
-import { isPremium, isBlocked, trackUser } from "@/lib/access";
+import { isPremium, isBlocked, trackUser, isAdminEmail } from "@/lib/access";
 import { verifyAdminSession } from "@/lib/config";
 
 export const runtime = "nodejs";
@@ -19,7 +19,7 @@ export async function GET(req) {
   const until = isPremium(email);
   return Response.json({
     email,
-    isAdmin: false,
+    isAdmin: isAdminEmail(email),
     premium: until > 0,
     premiumUntil: until > 0 ? until : 0,
     authed: !!user,

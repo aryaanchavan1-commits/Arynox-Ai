@@ -1,4 +1,5 @@
-import { grantPremium, revokePremium, listPremium, listVisitors, clearVisitors, listUsers, blockUser, unblockUser, removeUser, trackUser } from "@/lib/access";
+import { getUserFromToken } from "@/lib/supabase";
+import { isAdminEmail, grantPremium, revokePremium, listPremium, listVisitors, clearVisitors, listUsers, blockUser, unblockUser, removeUser, trackUser } from "@/lib/access";
 import { verifyAdminSession, cfgList, setCfg, envDump, cfg, isAdminUser, adminCreds } from "@/lib/config";
 import { SUPABASE_SECRET_KEY, SUPABASE_URL } from "@/lib/supabase";
 
@@ -9,6 +10,10 @@ async function adminFromRequest(req) {
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   const session = verifyAdminSession(token);
   if (session) return { kind: "user", username: session.username };
+  if (token) {
+    const user = await getUserFromToken(token);
+    if (user?.email && isAdminEmail(user.email)) return { kind: "email", email: user.email };
+  }
   return null;
 }
 

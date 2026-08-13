@@ -503,6 +503,15 @@ export default function Home() {
           save(KEY.session, u);
           setAuthOpen(false);
           showToast(`👋 welcome, ${u.name}`);
+          try {
+            const r = await fetch("/api/me", { headers: { Authorization: `Bearer ${u.token}` } });
+            const d = await r.json();
+            if (d?.isAdmin) {
+              setMe({ email: u.email, isAdmin: true, premium: !!d.premium, premiumUntil: d.premiumUntil || 0 });
+              setAdminDashOpen(true);
+              showToast("🛡 Admin dashboard unlocked — welcome, owner");
+            }
+          } catch {}
         }
       } else {
         const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { full_name: authName.trim() || email.split("@")[0] } } });
