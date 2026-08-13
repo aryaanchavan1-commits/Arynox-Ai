@@ -159,7 +159,7 @@ void main() {
 }
 
 const EFFECTS = ["aurora", "threads", "nebula"];
-const TAB_EFFECT = { chat: 0, ide: 1, camera: 2, auto: 2, studio: 1 };
+const TAB_EFFECT = { chat: 0, ide: 1, camera: 2, auto: 2 };
 
 function qualityLevel() {
   try {

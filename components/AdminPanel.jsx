@@ -8,7 +8,7 @@ const PROVIDER_LABELS = {
   OPENCODE_API_KEY: "OpenCode Zen",
   EXA_API_KEY: "Exa Search",
   SARVAM_API_KEY: "Sarvam TTS",
-  HEDRA_API_KEY: "Hedra Video",
+  IMAGE_API_KEY: "Image gen (OpenAI-compatible)",
   WHATSAPP_TOKEN: "WhatsApp",
   GITHUB_TOKEN: "GitHub",
   GMAIL_USER: "Gmail",

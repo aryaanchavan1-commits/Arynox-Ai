@@ -9,7 +9,6 @@ import JSZip from "jszip";
 import { classify } from "@/lib/intent";
 import { sb } from "@/lib/supabase-client";
 import { BASE_INR, COUNTRY_CURRENCY, CURRENCIES, detectRegion, getRates, priceFor } from "@/lib/currency";
-import VideoStudio from "@/components/VideoStudio";
 import AdminPanel from "@/components/AdminPanel";
 import Backdrop from "@/components/Backdrop";
 
@@ -1904,7 +1903,6 @@ export default function Home() {
           <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}>💬<span>Chat</span></button>
           <button className={tab === "ide" ? "active" : ""} onClick={() => setTab("ide")}>💻<span>Code</span></button>
           <button className={tab === "camera" ? "active" : ""} onClick={() => setTab("camera")}>👁<span>Live</span></button>
-          <button className={tab === "studio" ? "active" : ""} onClick={() => setTab("studio")}>🎬<span>Studio</span></button>
           <button className={tab === "auto" ? "active" : ""} onClick={() => setTab("auto")}>⚡<span>Automate</span></button>
         </div>
         <div className="rail-foot">
@@ -1989,7 +1987,7 @@ export default function Home() {
                   {m.role === "assistant" && <div className="avatar">✦</div>}
                   <div className="msg-body">
                     {m.image && m.role === "user" ? <img className="attached" src={m.image} alt="attached" /> : null}
-                    {m.role === "assistant" && m.image && /^https?:\/\//.test(m.image) ? (
+                    {m.role === "assistant" && m.image && /^(https?:\/\/|data:image\/)/.test(m.image) ? (
                       <div className="gen-wrap">
                         <a href={m.image} target="_blank" rel="noreferrer"><img className="generated" src={m.image} alt="generated" loading="lazy" onError={() => showToast("🖼️ Image host is busy — the image may take a moment, or try again")} /></a>
                         <div className="gen-prompt">{m.content}</div>
@@ -2328,8 +2326,6 @@ export default function Home() {
             </div>
           </div>
         )}
-
-        {tab === "studio" && <VideoStudio onToast={showToast} />}
 
         {tab === "auto" && (
           <div className="auto">
