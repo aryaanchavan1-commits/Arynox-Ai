@@ -463,7 +463,7 @@ export default function Home() {
   const friendlyAuthError = (err) => {
     const m = String(err?.message || err || "");
     if (m.includes("Unsupported provider")) return "Google sign-in isn't available right now — try again in a moment, or use Email/Password.";
-    if (m.includes("Invalid login credentials")) return "Wrong email or password.";
+    if (m.includes("Invalid login credentials")) return "Wrong email or password. App owner? Sign in with username aryan + your admin password (default aryanadmin1).";
     if (m.includes("Email not confirmed")) return "Please confirm your email first — check your inbox for the confirmation link.";
     if (m.includes("User already registered")) return "This email is already registered — try signing in instead.";
     if (m.includes("rate limit")) return "Too many sign-ups on this project recently. Please wait about an hour, then try again — or use Google sign-in, which is instant.";
@@ -479,6 +479,21 @@ export default function Home() {
     setAuthBusy(true);
     setAuthError("");
     try {
+      if (authTab === "in" && !email.includes("@")) {
+        const res = await fetch("/api/admin-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: email, password: pass }), signal: AbortSignal.timeout(15000) });
+        const d = await res.json();
+        if (!res.ok) {
+          setAuthError("Wrong username or password — owner login is \"aryan\" + your admin password (default aryanadmin1).");
+          return;
+        }
+        setAdminToken(d.token);
+        save("arynox_admin", d.token);
+        setMe((prev) => ({ ...prev, isAdmin: true }));
+        setAuthOpen(false); setAuthTab("in"); setAuthEmail(""); setAuthPass(""); setAuthError("");
+        setAdminDashOpen(true);
+        showToast("🛡 Welcome, admin");
+        return;
+      }
       if (authTab === "in") {
         const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
         if (error) throw error;
