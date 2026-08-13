@@ -277,12 +277,19 @@ export default function Home() {
   const abortRef = useRef(null);
   const kioskRef = useRef({ lastAsk: 0, step: "off" });
 
+  const openAdminLogin = () => {
+    setAdminUser(""); setAdminPass(""); setAdminLoginErr("");
+    setAdminOpen(true);
+  };
+
   const doAdminLogin = async () => {
-    if (!adminUser.trim() || !adminPass) { setAdminLoginErr("Enter username and password."); return; }
+    const u = String(adminUser || "").trim();
+    const p = String(adminPass || "").trim();
+    if (!u || !p) { setAdminLoginErr("Enter username and password."); return; }
     setAdminLoginBusy(true);
     setAdminLoginErr("");
     try {
-      const res = await fetch("/api/admin-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: adminUser.trim(), password: adminPass }), signal: AbortSignal.timeout(15000) });
+      const res = await fetch("/api/admin-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: u, password: p }), signal: AbortSignal.timeout(15000) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Login failed");
       setAdminToken(d.token);
@@ -292,7 +299,12 @@ export default function Home() {
       setAdminUser(""); setAdminPass("");
       setAdminDashOpen(true);
       showToast("🛡 Welcome, admin");
-    } catch (err) { setAdminLoginErr(err.message); }
+    } catch (err) {
+      const m = String(err?.message || "");
+      setAdminLoginErr(m.includes("Wrong username or password")
+        ? "Wrong username or password — owner login is username \"aryan\" + your admin password (default aryanadmin1, unless you changed it in Vercel/Render)."
+        : m);
+    }
     finally { setAdminLoginBusy(false); }
   };
 
@@ -410,11 +422,26 @@ export default function Home() {
   const adminMode = me.isAdmin || !!adminToken;
 
   useEffect(() => {
+    if (!adminToken) return;
+    let dead = false;
+    fetch("/api/me", { headers: { Authorization: `Bearer ${adminToken}` } })
+      .then((r) => r.json())
+      .then((d) => {
+        if (dead || !d || d.isAdmin) return;
+        setAdminToken(null);
+        save("arynox_admin", null);
+        setMe((prev) => ({ ...prev, isAdmin: false }));
+      })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [adminToken]);
+
+  useEffect(() => {
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "a") {
         e.preventDefault();
         if (adminMode) setAdminDashOpen(true);
-        else setAdminOpen(true);
+        else openAdminLogin();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -2623,6 +2650,7 @@ export default function Home() {
                 <button className="chip" style={{ width: "100%" }} disabled={authBusy} onClick={googleSignIn}>🔵 Continue with Google</button>
                 <button className="chip face-btn" style={{ width: "100%" }} disabled={authBusy} onClick={() => { setFaceOpen(true); setFaceErr(""); setFaceMsg(""); setAuthError(""); }}>😀 {authTab === "up" ? "Create account with your face" : "Sign in with your face"}</button>
                 <button className="chip demo-btn" style={{ width: "100%" }} disabled={authBusy} onClick={demoSignIn}>⚡ Try a quick demo — no account needed</button>
+                <button className="auth-forgot" style={{ textAlign: "center", width: "100%" }} onClick={openAdminLogin}>🛡 App owner? Use the admin login instead</button>
                 <p className="auto-note">Your workspace, files and business profile are saved to your account — sign in on any device to continue.</p>
               </div>
             )}
