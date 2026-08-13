@@ -1,6 +1,5 @@
-import { getUserFromToken } from "@/lib/supabase";
-import { isAdminEmail, grantPremium, revokePremium, listPremium, listVisitors, clearVisitors, listUsers, blockUser, unblockUser, removeUser, trackUser } from "@/lib/access";
-import { verifyAdminSession, cfgList, setCfg, envDump, cfg, isAdminUser } from "@/lib/config";
+import { grantPremium, revokePremium, listPremium, listVisitors, clearVisitors, listUsers, blockUser, unblockUser, removeUser, trackUser } from "@/lib/access";
+import { verifyAdminSession, cfgList, setCfg, envDump, cfg, isAdminUser, adminCreds } from "@/lib/config";
 import { SUPABASE_SECRET_KEY, SUPABASE_URL } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -10,10 +9,6 @@ async function adminFromRequest(req) {
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   const session = verifyAdminSession(token);
   if (session) return { kind: "user", username: session.username };
-  if (token) {
-    const user = await getUserFromToken(token);
-    if (user?.email && isAdminEmail(user.email)) return { kind: "email", email: user.email };
-  }
   return null;
 }
 
@@ -53,7 +48,6 @@ export async function POST(req) {
     }
     if (action === "remove") {
       if (!email) return Response.json({ error: "email required" }, { status: 400 });
-      if (isAdminEmail(email)) return Response.json({ error: "cannot remove an admin" }, { status: 400 });
       let removedFromSupabase = false;
       if (SUPABASE_SECRET_KEY && SUPABASE_URL) {
         try {
@@ -103,7 +97,7 @@ export async function POST(req) {
       const current = String(body?.current || "");
       const next = String(body?.next || "");
       if (next.length < 8) return Response.json({ error: "new password must be at least 8 characters" }, { status: 400 });
-      const creds = { username: cfg("ADMIN_USERNAME") || "aryan", password: cfg("ADMIN_PASSWORD") || "aryanadmin123" };
+      const creds = adminCreds();
       if (!isAdminUser(creds.username, current)) {
         return Response.json({ error: "current password is wrong" }, { status: 401 });
       }
